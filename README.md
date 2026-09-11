@@ -3,7 +3,7 @@
 [![CI](https://github.com/githubuser2777/ZenLavaTerm/actions/workflows/ci.yml/badge.svg)](https://github.com/githubuser2777/ZenLavaTerm/actions/workflows/ci.yml)
 [![autofix.ci](https://github.com/githubuser2777/ZenLavaTerm/actions/workflows/autofix.yml/badge.svg)](https://github.com/githubuser2777/ZenLavaTerm/actions/workflows/autofix.yml)
 [![Release](https://github.com/githubuser2777/ZenLavaTerm/actions/workflows/release.yml/badge.svg)](https://github.com/githubuser2777/ZenLavaTerm/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Rust: 1.75+](https://img.shields.io/badge/Rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
 
 > **A high-performance, terminal-native ambient lava lamp & metaball visualizer written in Rust.**
@@ -635,7 +635,7 @@ ZenLavaTerm/
 ├── Cargo.lock                  # Pinned dependency graph
 ├── CHANGELOG.md                # Project release history & versioning
 ├── CONTRIBUTING.md             # Developer contribution guidelines
-├── LICENSE                     # MIT License
+├── LICENSE                     # Apache-2.0 License
 ├── README.md                   # Comprehensive project documentation
 ├── rustfmt.toml                # Rust code formatting rules
 ├── benches/
@@ -1059,4 +1059,4 @@ We welcome community contributions, bug reports, theme submissions, and feature 
 
 ## License
 
-This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for the full license text.
+This project is licensed under the **Apache License, Version 2.0**. See the [LICENSE](LICENSE) file for the full license text.

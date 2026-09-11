@@ -3,7 +3,7 @@ class Lavaterm < Formula
   homepage "https://github.com/githubuser2777/ZenLavaTerm"
   url "https://github.com/githubuser2777/ZenLavaTerm/archive/refs/tags/v1.0.1.tar.gz"
   sha256 "__SOURCE_SHA__"
-  license "MIT"
+  license "Apache-2.0"
   head "https://github.com/githubuser2777/ZenLavaTerm.git", branch: "main"
 
   depends_on "rust" => :build
