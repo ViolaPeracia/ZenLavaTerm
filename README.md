@@ -1,8 +1,8 @@
 # LavaTerm 🌋
 
-[![CI](https://github.com/githubuser2777/ZenLavaTerm/actions/workflows/ci.yml/badge.svg)](https://github.com/githubuser2777/ZenLavaTerm/actions/workflows/ci.yml)
-[![autofix.ci](https://github.com/githubuser2777/ZenLavaTerm/actions/workflows/autofix.yml/badge.svg)](https://github.com/githubuser2777/ZenLavaTerm/actions/workflows/autofix.yml)
-[![Release](https://github.com/githubuser2777/ZenLavaTerm/actions/workflows/release.yml/badge.svg)](https://github.com/githubuser2777/ZenLavaTerm/releases)
+[![CI](https://github.com/ViolaPeracia/ZenLavaTerm/actions/workflows/ci.yml/badge.svg)](https://github.com/ViolaPeracia/ZenLavaTerm/actions/workflows/ci.yml)
+[![autofix.ci](https://github.com/ViolaPeracia/ZenLavaTerm/actions/workflows/autofix.yml/badge.svg)](https://github.com/ViolaPeracia/ZenLavaTerm/actions/workflows/autofix.yml)
+[![Release](https://github.com/ViolaPeracia/ZenLavaTerm/actions/workflows/release.yml/badge.svg)](https://github.com/ViolaPeracia/ZenLavaTerm/releases)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Rust: 1.75+](https://img.shields.io/badge/Rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
 
@@ -126,7 +126,7 @@ Before building or running LavaTerm, ensure your environment meets the following
 
 ### Desktop Installers (Recommended)
 
-Pre-built standalone installers and packages are available on the [GitHub Releases](https://github.com/githubuser2777/ZenLavaTerm/releases) page for each official release:
+Pre-built standalone installers and packages are available on the [GitHub Releases](https://github.com/ViolaPeracia/ZenLavaTerm/releases) page for each official release:
 
 - **Linux**:
   - **AppImage (Portable)**: Download `ZenLavaTerm-v<VERSION>-linux-x86_64.AppImage`, run `chmod +x`, and execute directly.
@@ -144,10 +144,10 @@ For developers or distributions without pre-compiled binaries:
 
 ```bash
 # Install directly via Cargo
-cargo install --locked --git https://github.com/githubuser2777/ZenLavaTerm.git
+cargo install --locked --git https://github.com/ViolaPeracia/ZenLavaTerm.git
 
 # Or build from local clone
-git clone https://github.com/githubuser2777/ZenLavaTerm.git
+git clone https://github.com/ViolaPeracia/ZenLavaTerm.git
 cd ZenLavaTerm
 cargo install --path .
 ```
@@ -1044,7 +1044,7 @@ The release pipeline automatically enforces tag/version consistency, executes cr
 We welcome community contributions, bug reports, theme submissions, and feature requests!
 
 1. Read our [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
-2. Check existing [GitHub Issues](https://github.com/githubuser2777/ZenLavaTerm/issues) before opening a new issue.
+2. Check existing [GitHub Issues](https://github.com/ViolaPeracia/ZenLavaTerm/issues) before opening a new issue.
 3. Fork the repository and create a feature branch (`git checkout -b feature/amazing-theme`).
 4. Ensure code passes formatting and linting checks:
    ```bash

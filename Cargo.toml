@@ -7,8 +7,8 @@ authors = ["ZenLavaTerm Contributors"]
 description = "A terminal-native ambient lava lamp and metaball visualizer"
 readme = "README.md"
 license = "Apache-2.0"
-repository = "https://github.com/githubuser2777/ZenLavaTerm"
-homepage = "https://github.com/githubuser2777/ZenLavaTerm"
+repository = "https://github.com/ViolaPeracia/ZenLavaTerm"
+homepage = "https://github.com/ViolaPeracia/ZenLavaTerm"
 keywords = ["terminal", "metaball", "lava-lamp", "visualizer", "ambient"]
 categories = ["command-line-utilities", "graphics"]
 

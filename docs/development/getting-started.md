@@ -35,7 +35,7 @@ sudo dnf install alsa-lib-devel pkgconf-pkg-config
 
 ```bash
 # Clone the repository
-git clone https://github.com/githubuser2777/ZenLavaTerm.git
+git clone https://github.com/ViolaPeracia/ZenLavaTerm.git
 cd ZenLavaTerm
 
 # Build in debug mode
