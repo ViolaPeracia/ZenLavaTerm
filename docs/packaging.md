@@ -25,7 +25,7 @@ Every official release includes a consolidated `SHA256SUMS.txt` and SLSA build p
 
 #### Homebrew (macOS & Linux)
 ```bash
-brew install githubuser2777/tap/lavaterm
+brew install ViolaPeracia/tap/lavaterm
 ```
 
 #### Arch Linux (AUR)
@@ -45,7 +45,7 @@ paru -S lavaterm
 
 The AppImage runs on any modern Linux distribution without requiring root privileges or package managers.
 
-1. **Download** the latest `ZenLavaTerm-v<VERSION>-linux-x86_64.AppImage` from [GitHub Releases](https://github.com/githubuser2777/ZenLavaTerm/releases).
+1. **Download** the latest `ZenLavaTerm-v<VERSION>-linux-x86_64.AppImage` from [GitHub Releases](https://github.com/ViolaPeracia/ZenLavaTerm/releases).
 2. **Make it executable**:
    ```bash
    chmod +x ZenLavaTerm-v*-linux-x86_64.AppImage
@@ -59,7 +59,7 @@ The AppImage runs on any modern Linux distribution without requiring root privil
 
 The `.deb` package installs the `lavaterm` binary system-wide to `/usr/bin/lavaterm`, registers desktop integration, and installs documentation and licenses.
 
-1. **Download** the latest `ZenLavaTerm-v<VERSION>-linux-x86_64.deb` from [GitHub Releases](https://github.com/githubuser2777/ZenLavaTerm/releases).
+1. **Download** the latest `ZenLavaTerm-v<VERSION>-linux-x86_64.deb` from [GitHub Releases](https://github.com/ViolaPeracia/ZenLavaTerm/releases).
 2. **Install using `apt` or `dpkg`**:
    ```bash
    # Using apt (automatically resolves any dependencies)
@@ -81,7 +81,7 @@ The `.deb` package installs the `lavaterm` binary system-wide to `/usr/bin/lavat
 
 The `.msi` installer provides a standard Windows installation experience.
 
-1. **Download** `ZenLavaTerm-v<VERSION>-windows-x86_64.msi` from [GitHub Releases](https://github.com/githubuser2777/ZenLavaTerm/releases).
+1. **Download** `ZenLavaTerm-v<VERSION>-windows-x86_64.msi` from [GitHub Releases](https://github.com/ViolaPeracia/ZenLavaTerm/releases).
 2. **Run the installer**: Double-click the `.msi` file and follow the setup wizard.
 3. **Features**:
    - Installs `lavaterm.exe` to `Program Files\ZenLavaTerm`.
@@ -100,7 +100,7 @@ The `.msi` installer provides a standard Windows installation experience.
 
 The `.dmg` contains a universal application bundle supporting both Apple Silicon (M1/M2/M3/M4) and Intel Macs.
 
-1. **Download** `ZenLavaTerm-v<VERSION>-macos-universal.dmg` from [GitHub Releases](https://github.com/githubuser2777/ZenLavaTerm/releases).
+1. **Download** `ZenLavaTerm-v<VERSION>-macos-universal.dmg` from [GitHub Releases](https://github.com/ViolaPeracia/ZenLavaTerm/releases).
 2. **Mount the disk image**: Double-click the `.dmg` file.
 3. **Install**: Drag the **ZenLavaTerm** application icon into the **Applications** folder shortcut.
 4. **Launch**: Run `ZenLavaTerm` from Applications or execute the binary directly from your terminal:
@@ -120,14 +120,14 @@ Users who prefer building locally or are using other distributions (such as Arch
 ### Using Cargo (Recommended for Rust Users)
 
 ```bash
-cargo install --locked --git https://github.com/githubuser2777/ZenLavaTerm.git
+cargo install --locked --git https://github.com/ViolaPeracia/ZenLavaTerm.git
 ```
 
 ### Manual Compilation from Git Clone
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/githubuser2777/ZenLavaTerm.git
+git clone https://github.com/ViolaPeracia/ZenLavaTerm.git
 cd ZenLavaTerm
 
 # 2. Build optimized release binary

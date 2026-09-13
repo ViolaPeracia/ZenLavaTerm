@@ -44,7 +44,7 @@ Version: ${VERSION}
 Section: utils
 Priority: optional
 Architecture: amd64
-Maintainer: ZenLavaTerm Contributors <https://github.com/githubuser2777/ZenLavaTerm>
+Maintainer: ZenLavaTerm Contributors <https://github.com/ViolaPeracia/ZenLavaTerm>
 Description: Terminal-native ambient lava lamp and metaball visualizer
  A high-performance, terminal-native ambient lava lamp & metaball visualizer
  written in Rust. Features 2D scalar field isosurfaces, sub-pixel Unicode
