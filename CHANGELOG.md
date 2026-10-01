@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **`--system` mode lost all blob size variety** (#84): `Simulation::apply_signals` overwrote `blob.radius` with an `i % 3` formula, collapsing every metaball onto 3 repeating sizes within ~100ms of startup. Radius modulation is now applied per-blob on top of each blob's own generated radius (`base_radii`), so 12 blobs keep 12 distinct sizes.
+- **Reactive modes ignored `[simulation]` configuration** (#84): `apply_signals` and `apply_audio_signals` hardcoded `noise = 0.15 * …` and `buoyancy = 0.50 + …`, discarding values the user set in `config.toml` and that `Config::validate()` had already accepted. Modulation is now expressed as a multiplier on the configured base, so `noise = 0.0` stays `0.0` and a high configured `buoyancy` is respected.
+- **Keyboard speed control was dead in reactive modes** (#84): `Action::SpeedUp` / `SlowDown` wrote `sim.params.buoyancy` directly, but the next signal poll overwrote it, so the keys appeared broken. User input is now accumulated as `user_buoyancy_offset` and reapplied on top of the reactive value, making the signal application idempotent.
+- **`Action::Reset` restored modulated physics** (#84): reset rebuilt the simulation from the reactive-modulated `params` instead of the user's configuration. It now uses the new `Simulation::base_params()`.
+- **`cargo clippy -D warnings` failure on newer toolchains** (#84): fixed `clippy::redundant_closure` in `src/audio/native.rs` (`catch_unwind(|| …)` → `catch_unwind(…)`), unblocking the `AGENTS.md` §5 CI gate.
+
+### Added
+- `Simulation::nudge_buoyancy(delta)` and `Simulation::base_params()` as the supported entry points for user-driven buoyancy changes and configuration reads.
+- Five regression tests in `src/core/simulation.rs` covering radius variety preservation, config-respect under saturated signals, keyboard offset survival across polls, audio-signal idempotency, and `apply_radius_scale` composition.
+
 ## [1.0.1] - 2026-09-03 — Codebase Hygiene, Dependency Optimization & Patch Release
 
 ### Refactored & Optimized

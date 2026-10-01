@@ -284,7 +284,7 @@ mod tests {
         // a graceful skip instead of a hard CI failure.
         #[cfg(target_os = "windows")]
         {
-            let result = std::panic::catch_unwind(|| NativeAudioCapture::list_devices());
+            let result = std::panic::catch_unwind(NativeAudioCapture::list_devices);
             match result {
                 Ok(devices) => {
                     if !devices.is_empty() {

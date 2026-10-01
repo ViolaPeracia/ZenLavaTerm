@@ -343,15 +343,16 @@ fn run_event_loop(
                         Action::Quit => return Ok(()),
                         Action::TogglePause => paused = !paused,
                         Action::SpeedUp => {
-                            sim.params.buoyancy = (sim.params.buoyancy + 0.1).min(3.0);
+                            sim.nudge_buoyancy(0.1);
                         }
                         Action::SlowDown => {
-                            sim.params.buoyancy = (sim.params.buoyancy - 0.1).max(0.1);
+                            sim.nudge_buoyancy(-0.1);
                         }
                         Action::Reset => {
                             let count = sim.blobs.len();
                             let radius_scale = sim.radius_scale;
-                            sim = Simulation::new(sim.params, count, 42);
+                            // Restore configured physics, not reactive-modulated values.
+                            sim = Simulation::new(sim.base_params(), count, 42);
                             sim.apply_radius_scale(radius_scale);
                             mouse_tracker.reset();
                         }
