@@ -7,15 +7,21 @@
 
 ## 1. Release & Codebase Status
 
-- **Crate Version**: `1.0.1`
-- **Git HEAD**: `v1.0.1` (`898db12`)
+- **Crate Version**: `1.0.1` (unreleased fixes pending for 1.0.2)
+- **Git HEAD**: `cd90570` on `main`; reactive-signal fixes on `fix/84-reactive-signal-bugs`
 - **Active Test Suite**:
-  - Unit tests: **112 passed**, 0 failed
+  - Unit tests: **117 passed**, 0 failed
   - Integration tests: **23 passed**, 0 failed
-  - Total automated tests: **135 passed** (`cargo test`)
+  - Total automated tests: **140 passed** (`cargo test`)
 - **Code Quality Checks**:
   - `cargo fmt --check`: Clean (no formatting differences)
-  - `cargo clippy --all-targets --all-features -- -D warnings`: Clean (zero warnings)
+  - `cargo clippy --all-targets --all-features -- -D warnings`: Clean (zero warnings) on rustc 1.99.0
+  - `cargo run -- --headless --frames 30`: Passes
+- **Build Environment Note**: On Windows, the MSVC toolchain requires the
+  `Microsoft.VisualStudio.Component.VC.Tools.x86.x64` component, which is not installed on
+  all machines. Git for Windows also ships a coreutils `link.exe` that shadows the MSVC
+  linker. The `x86_64-pc-windows-gnu` toolchain pairs with the MinGW gcc on PATH and avoids
+  both problems.
 - **Crate Size & Dependencies**:
   - Minimal direct dependencies (7 runtime, 1 dev): `crossterm`, `serde`, `serde_json`, `toml`, `clap`, `signal-hook`, `cpal`, `criterion`.
   - Removed direct `thiserror` dependency in v1.0.1 (standard `std::error::Error` implementation).

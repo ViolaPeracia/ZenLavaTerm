@@ -58,8 +58,8 @@ The audio pipeline follows a decoupled producer-consumer model:
 
 | Frequency Band | Range | Lava Physical Effect |
 |---|:---:|---|
-| **Bass** | $20\text{ Hz} - 250\text{ Hz}$ | Gives powerful upward convective thrust ($0.80 + 1.50 \times \text{bass}$) mimicking bass kicks. |
-| **Midrange** | $250\text{ Hz} - 4,000\text{ Hz}$ | Modulates Brownian fluid turbulence ($0.15 \times (1.0 + 2.5 \times \text{mid})$). |
+| **Bass** | $20\text{ Hz} - 250\text{ Hz}$ | Gives powerful upward convective thrust ($\text{simulation.buoyancy} \times (1.0 + 1.875 \times \text{bass})$) mimicking bass kicks, on top of any active keyboard speed offset. |
+| **Midrange** | $250\text{ Hz} - 4,000\text{ Hz}$ | Scales Brownian fluid turbulence ($\text{simulation.noise} \times (1.0 + 2.5 \times \text{mid})$). |
 | **Treble** | $4,000\text{ Hz} - 20,000\text{ Hz}$ | Imparts subtle kinetic perturbation and surface agitation. |
 
 ## Usage

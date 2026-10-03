@@ -37,7 +37,7 @@ Before modifying or creating any code, configuration, or documentation:
    - Read the target module, its public exports (`mod.rs`, `lib.rs`), and its existing unit/integration tests.
    - Do not assume missing functionality or duplicate existing modules.
 2. **Review Relevant Decisions & Architecture**:
-   - Check [docs/architecture/](file:///home/skids/Documents/code/ZenLavaTerm/docs/architecture/) and [.ai/decisions/](file:///home/skids/Documents/code/ZenLavaTerm/.ai/decisions/) before proposing changes to data flow or dependencies.
+   - Check [docs/architecture/](docs/architecture/) and [.ai/decisions/](.ai/decisions/) before proposing changes to data flow or dependencies.
 3. **Check Current Clean State**:
    - Verify that working tree is clean with `git status`.
    - Run `cargo check --all-targets --all-features` to ensure baseline integrity.
@@ -110,10 +110,10 @@ python3 scripts/smoke_test.py target/debug/lavaterm
 ## 6. Documentation Synchronization Policy
 
 - Whenever modifying CLI arguments, configuration schemas, theme formats, or runtime behaviors:
-  1. Update the authoritative guide in [docs/](file:///home/skids/Documents/code/ZenLavaTerm/docs/).
-  2. Update [README.md](file:///home/skids/Documents/code/ZenLavaTerm/README.md) if user-facing behavior, install instructions, or CLI flags changed.
-  3. Record notable additions, changes, or deprecations in [CHANGELOG.md](file:///home/skids/Documents/code/ZenLavaTerm/CHANGELOG.md) following Keep a Changelog.
-  4. Update [.ai/context/current-state.md](file:///home/skids/Documents/code/ZenLavaTerm/.ai/context/current-state.md) if version or test metrics changed.
+  1. Update the authoritative guide in [docs/](docs/).
+  2. Update [README.md](README.md) if user-facing behavior, install instructions, or CLI flags changed.
+  3. Record notable additions, changes, or deprecations in [CHANGELOG.md](CHANGELOG.md) following Keep a Changelog.
+  4. Update [.ai/context/current-state.md](.ai/context/current-state.md) if version or test metrics changed.
 - Do not invent speculative roadmap features, fake benchmarks, or unverified test counts. Record empirical facts only.
 
 ---
