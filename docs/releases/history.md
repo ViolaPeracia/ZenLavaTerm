@@ -1,6 +1,6 @@
 # Release History Overview
 
-This document summarizes the major milestone releases of ZenLavaTerm. For granular line-by-line changelog entries and commit references, see [CHANGELOG.md](file:///home/skids/Documents/code/ZenLavaTerm/CHANGELOG.md).
+This document summarizes the major milestone releases of ZenLavaTerm. For granular line-by-line changelog entries and commit references, see [CHANGELOG.md](../../CHANGELOG.md).
 
 ---
 

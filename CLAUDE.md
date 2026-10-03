@@ -1,7 +1,7 @@
 # Claude Code Guidance for ZenLavaTerm
 
 This file provides Claude Code specific operational shortcuts and invocation guidelines.
-**All repository-wide architectural rules, quality standards, and validation workflows are defined authoritatively in [AGENTS.md](file:///home/skids/Documents/code/ZenLavaTerm/AGENTS.md).** Do not duplicate rules here.
+**All repository-wide architectural rules, quality standards, and validation workflows are defined authoritatively in [AGENTS.md](AGENTS.md).** Do not duplicate rules here.
 
 ---
 
@@ -38,7 +38,7 @@ cargo build --release
 ## 2. Operating Principles for Claude
 
 1. **Reference AGENTS.md First**:
-   - Consult [AGENTS.md](file:///home/skids/Documents/code/ZenLavaTerm/AGENTS.md) for architectural boundaries (`Signals -> Simulation -> Framebuffer -> Renderer -> Stdout`), zero production panics, and documentation requirements.
+   - Consult [AGENTS.md](AGENTS.md) for architectural boundaries (`Signals -> Simulation -> Framebuffer -> Renderer -> Stdout`), zero production panics, and documentation requirements.
 2. **Inspect Before Changing**:
    - Always view the relevant module files and test files before creating or editing code.
 3. **Keep Explanations Concise**:

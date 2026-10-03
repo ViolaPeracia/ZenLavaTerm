@@ -41,7 +41,7 @@
 
 ## 3. Empirical Performance Benchmarks
 
-Empirical Criterion measurements recorded in [docs/benchmarks/benchmark_baseline.md](file:///home/skids/Documents/code/ZenLavaTerm/docs/benchmarks/benchmark_baseline.md):
+Empirical Criterion measurements recorded in [docs/benchmarks/benchmark_baseline.md](../../docs/benchmarks/benchmark_baseline.md):
 
 - **Scalar Field Potential Evaluation**:
   - 6 blobs ($80 \times 20$ grid): **422.79 ns** (~3.78M evaluations/sec)
