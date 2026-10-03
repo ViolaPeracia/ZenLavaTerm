@@ -37,9 +37,9 @@ The reactive system follows a strictly decoupled provider-signal pattern:
 
 | Metric | Source (Linux) | Source (Windows) | Source (macOS) | Range | Lava Physical Effect |
 |---|---|---|---|:---:|---|
-| **CPU Utilization** | `/proc/stat` delta ticks | `GetSystemTimes` (idle vs total) | `host_statistics64` (`HOST_CPU_LOAD_INFO`) | `[0.0, 1.0]` | Modulates Brownian thermal noise and fluid turbulence ($0.15 \times (1.0 + 2.5 \times \text{cpu})$). |
-| **RAM Usage** | `/proc/meminfo` (`MemTotal` vs `MemAvailable`) | `GlobalMemoryStatusEx` (`ullTotalPhys` vs `ullAvailPhys`) | `host_statistics64` (`HOST_VM_INFO64`) | `[0.0, 1.0]` | Modulates active blob radius and expansion ($0.85 + 0.40 \times \text{ram}$). |
-| **Battery Level** | `/sys/class/power_supply/BAT*/capacity` | `GetSystemPowerStatus` (`BatteryLifePercent`) | Neutral baseline (`1.0`) | `[0.0, 1.0]` | Modulates thermal buoyancy and convection energy ($0.50 + 0.60 \times \text{bat}$). |
+| **CPU Utilization** | `/proc/stat` delta ticks | `GetSystemTimes` (idle vs total) | `host_statistics64` (`HOST_CPU_LOAD_INFO`) | `[0.0, 1.0]` | Scales Brownian thermal noise and fluid turbulence ($\text{simulation.noise} \times (1.0 + 2.5 \times \text{cpu})$). |
+| **RAM Usage** | `/proc/meminfo` (`MemTotal` vs `MemAvailable`) | `GlobalMemoryStatusEx` (`ullTotalPhys` vs `ullAvailPhys`) | `host_statistics64` (`HOST_VM_INFO64`) | `[0.0, 1.0]` | Scales each blob's own radius ($0.85 + 0.40 \times \text{ram}$ multiplier, preserving per-blob variety). |
+| **Battery Level** | `/sys/class/power_supply/BAT*/capacity` | `GetSystemPowerStatus` (`BatteryLifePercent`) | Neutral baseline (`1.0`) | `[0.0, 1.0]` | Scales thermal buoyancy and convection energy ($\text{simulation.buoyancy} \times (0.625 + 0.75 \times \text{bat})$), plus any active keyboard speed offset. |
 | **I/O Activity** | `/proc/diskstats` delta sectors | `GetProcessIoCounters` delta transfer bytes | Baseline (`0.05`) | `[0.0, 1.0]` | Modulates bubble perturbance frequency. |
 
 ## Usage

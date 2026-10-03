@@ -96,6 +96,17 @@ where
 }
 
 /// Applies pressure modulation to physics parameters and convective state.
+///
+/// # Not used by the runtime
+///
+/// `Simulation::apply_interaction` routes [`Interaction::Pressure`] through
+/// [`Simulation::nudge_buoyancy`](crate::core::Simulation::nudge_buoyancy) instead,
+/// so this free function is no longer on the runtime path. It is kept because
+/// `lavaterm::core::interaction` is public API.
+///
+/// Do **not** call this on `Simulation::params.buoyancy`: `Simulation` recomputes
+/// that field from its configured base on every reactive poll, so the write would
+/// be silently discarded. Use `Simulation::nudge_buoyancy` instead.
 pub fn apply_pressure(params: &mut PhysicsParams, delta: f32) {
     params.buoyancy = (params.buoyancy + delta * 0.15).clamp(0.1, 3.0);
 }

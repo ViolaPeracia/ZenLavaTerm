@@ -42,7 +42,15 @@ impl SimplePrng {
 pub struct Simulation {
     /// Active metaballs.
     pub blobs: Vec<Blob>,
-    /// Physics parameters (derived: see [`Simulation::sync_derived_params`]).
+    /// Physics parameters.
+    ///
+    /// Derived state: `noise` and `buoyancy` are recomputed from `base_params`,
+    /// the reactive multipliers, and the user offset on every
+    /// [`apply_signals`](Self::apply_signals) /
+    /// [`apply_audio_signals`](Self::apply_audio_signals) call. Writing them
+    /// directly does not survive the next poll — use
+    /// [`nudge_buoyancy`](Self::nudge_buoyancy) for user input. The remaining
+    /// fields are never modulated and are safe to read.
     pub params: PhysicsParams,
     /// Scalar field evaluator.
     pub field: ScalarField,
@@ -503,18 +511,27 @@ mod tests {
     #[test]
     fn test_radius_scale_composes_with_signal_modulation() {
         let mut sim = Simulation::new(PhysicsParams::default(), 8, 99);
-        sim.apply_radius_scale(0.85);
+        let generated: Vec<f32> = sim.blobs.iter().map(|b| b.radius).collect();
+
+        // radius = generated * radius_scale * radius_multiplier
+        // memory_usage = 1.0 -> multiplier = 0.85 + 0.40 = 1.25
+        let radius_scale = 0.85;
+        let radius_multiplier = 1.25;
+        sim.apply_radius_scale(radius_scale);
         sim.apply_signals(&SystemSignals::new(0.0, 1.0, 0.0, 0.0));
 
-        let radii: Vec<f32> = sim.blobs.iter().map(|b| b.radius).collect();
-        let base: Vec<f32> = sim.blobs.iter().map(|_| 0.0).collect();
-        assert_eq!(base.len(), radii.len());
-        assert!(
-            radii.iter().all(|r| *r > 0.01),
-            "scaled radii must stay positive: {radii:?}"
-        );
+        for (blob, &base) in sim.blobs.iter().zip(generated.iter()) {
+            let expected = (base * radius_scale * radius_multiplier).max(0.01);
+            assert!(
+                (blob.radius - expected).abs() < 1e-6,
+                "radius must be the product of both scales: {} vs expected {}",
+                blob.radius,
+                expected
+            );
+        }
 
-        // Scaling after polling must be reflected, not lost on the next poll.
+        // Rescaling after a poll must be reflected, and must survive the next poll
+        // rather than being reset from `generated`.
         sim.apply_radius_scale(0.5);
         let after_rescale = sim.blobs[0].radius;
         sim.apply_signals(&SystemSignals::new(0.0, 1.0, 0.0, 0.0));
