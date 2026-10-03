@@ -80,17 +80,12 @@ impl Simulation {
     /// Maximum allowable delta time to avoid simulation instability.
     pub const MAX_DT: f32 = 0.10;
 
-    /// Minimum allowed effective buoyancy, matching `apply_pressure` bounds.
-    const MIN_BUOYANCY: f32 = 0.1;
-    /// Maximum allowed effective buoyancy, matching `apply_pressure` bounds.
-    const MAX_BUOYANCY: f32 = 3.0;
-    /// Bound on the accumulated user offset. `base_params.buoyancy` is validated as
-    /// non-negative and the reactive scale is >= 0.625, so an offset beyond
-    /// `MAX_BUOYANCY` in either direction can never move the result outside
-    /// `[MIN_BUOYANCY, MAX_BUOYANCY]` and is therefore indistinguishable from the
-    /// clamp. Bounding it keeps the offset from growing without limit over a long
-    /// session of held-down keys.
-    const BUOYANCY_OFFSET_LIMIT: f32 = Self::MAX_BUOYANCY;
+    /// Lowest buoyancy `Config::validate` accepts from `[simulation].buoyancy`.
+    /// Clamping a freshly constructed simulation to this range would silently rewrite
+    /// a valid configuration, so construction must not clamp at all.
+    const MIN_CONFIG_BUOYANCY: f32 = 0.0;
+    /// Highest buoyancy `Config::validate` accepts from `[simulation].buoyancy`.
+    const MAX_CONFIG_BUOYANCY: f32 = 5.0;
 
     /// Creates a new simulation with `blob_count` blobs arranged with initial thermal distribution.
     pub fn new(params: PhysicsParams, blob_count: usize, seed: u64) -> Self {
@@ -144,20 +139,47 @@ impl Simulation {
     /// Recomputes `self.params` from `base_params`, the reactive multipliers, and the
     /// accumulated user buoyancy offset. Idempotent: calling it repeatedly never
     /// compounds, so keyboard input survives signal polling.
+    ///
+    /// The result is *not* clamped. A valid `[simulation].buoyancy` of `5.0` must stay
+    /// `5.0`; clamping here would silently rewrite configuration that `Config::validate`
+    /// already accepted. Runaway is prevented instead by bounding the user offset in
+    /// [`Self::nudge_buoyancy`].
     fn sync_derived_params(&mut self) {
         self.params.noise = self.base_params.noise * self.reactive_noise_scale;
-        self.params.buoyancy = (self.base_params.buoyancy * self.reactive_buoyancy_scale
-            + self.user_buoyancy_offset)
-            .clamp(Self::MIN_BUOYANCY, Self::MAX_BUOYANCY);
+        self.params.buoyancy =
+            self.base_params.buoyancy * self.reactive_buoyancy_scale + self.user_buoyancy_offset;
     }
 
     /// Applies a user-requested buoyancy change (keyboard speed control, scroll pressure).
     ///
     /// The change is stored as an offset on top of the configured base value, so reactive
     /// modulation can no longer silently discard it.
+    ///
+    /// The offset is bounded to the range that can still change the result. Without that,
+    /// holding a speed key would bank credit that later `SlowDown` presses must first
+    /// exhaust, making the control feel unresponsive in both directions.
     pub fn nudge_buoyancy(&mut self, delta: f32) {
-        self.user_buoyancy_offset = (self.user_buoyancy_offset + delta)
-            .clamp(-Self::BUOYANCY_OFFSET_LIMIT, Self::BUOYANCY_OFFSET_LIMIT);
+        // Only the headroom relative to the current reactive value can change the
+        // result, so the offset is bounded by exactly that. This keeps a held speed key
+        // from banking credit that later SlowDown presses must first exhaust, without
+        // constraining the configured baseline itself.
+        let signal_term = self.base_params.buoyancy * self.reactive_buoyancy_scale;
+        let max_offset = Self::MAX_CONFIG_BUOYANCY - signal_term;
+        let min_offset = Self::MIN_CONFIG_BUOYANCY - signal_term;
+
+        self.user_buoyancy_offset =
+            (self.user_buoyancy_offset + delta).clamp(min_offset.min(0.0), max_offset.max(0.0));
+        self.sync_derived_params();
+    }
+
+    /// Replaces the configured physics baseline, discarding any accumulated user offset.
+    ///
+    /// Used by [`crate::widget::CompactScaler::adapt_simulation`] so that compact
+    /// physics scaling becomes the new baseline instead of being overwritten by the next
+    /// reactive poll.
+    pub fn set_base_params(&mut self, params: PhysicsParams) {
+        self.base_params = params;
+        self.user_buoyancy_offset = 0.0;
         self.sync_derived_params();
     }
 
@@ -507,9 +529,9 @@ mod tests {
         sim.apply_signals(&SystemSignals::new(0.0, 0.0, 0.5, 0.0));
         assert_eq!(sim.params.buoyancy, after_keys);
 
-        // And lowering must still work, bounded by the same clamp.
+        // And lowering must still work, bounded by the configured range.
         sim.nudge_buoyancy(-100.0);
-        assert_eq!(sim.params.buoyancy, Simulation::MIN_BUOYANCY);
+        assert_eq!(sim.params.buoyancy, Simulation::MIN_CONFIG_BUOYANCY);
     }
 
     /// `apply_audio_signals` must respect configured values and preserve user offsets too.
@@ -545,21 +567,99 @@ mod tests {
         assert_eq!(once, twice, "re-applying the same scale must not compound");
     }
 
-    /// The user buoyancy offset must stay bounded over a long session of held keys.
+    /// Regression for review finding P1: construction clamped `params.buoyancy` into
+    /// the historical `apply_pressure` range, silently rewriting configuration values
+    /// that `Config::validate` had already accepted.
     #[test]
-    fn test_buoyancy_offset_stays_bounded() {
+    fn test_construction_preserves_valid_config_range() {
+        for configured in [0.0_f32, 0.1, 0.8, 3.0, 5.0] {
+            let sim = Simulation::new(
+                PhysicsParams {
+                    buoyancy: configured,
+                    ..PhysicsParams::default()
+                },
+                6,
+                42,
+            );
+            assert_eq!(
+                sim.params.buoyancy, configured,
+                "configured buoyancy {configured} must survive construction unchanged"
+            );
+        }
+    }
+
+    /// Regression for review finding P2: the offset used to keep accumulating after the
+    /// effective value had saturated, so later `SlowDown` presses did nothing visible
+    /// until the banked credit was spent.
+    #[test]
+    fn test_buoyancy_offset_does_not_bank_credit() {
         let mut sim = Simulation::new(PhysicsParams::default(), 6, 42);
-        for _ in 0..10_000 {
+        sim.apply_signals(&SystemSignals::new(0.0, 0.0, 0.0, 0.0));
+
+        for _ in 0..1_000 {
             sim.nudge_buoyancy(0.1);
         }
-        assert_eq!(sim.params.buoyancy, Simulation::MAX_BUOYANCY);
-        assert!(sim.user_buoyancy_offset <= Simulation::BUOYANCY_OFFSET_LIMIT);
+        let saturated = sim.params.buoyancy;
+        assert_eq!(saturated, Simulation::MAX_CONFIG_BUOYANCY);
 
-        for _ in 0..10_000 {
+        // The very first SlowDown must have a visible effect.
+        sim.nudge_buoyancy(-0.1);
+        assert!(
+            sim.params.buoyancy < saturated,
+            "first SlowDown after saturation must be visible: {} vs {saturated}",
+            sim.params.buoyancy
+        );
+
+        // And the offset must stay within the range that can still change the result.
+        for _ in 0..1_000 {
+            sim.nudge_buoyancy(0.1);
+        }
+        assert!(
+            sim.params.buoyancy <= Simulation::MAX_CONFIG_BUOYANCY,
+            "sustained SpeedUp must not push buoyancy past the configured maximum"
+        );
+
+        for _ in 0..1_000 {
             sim.nudge_buoyancy(-0.1);
         }
-        assert_eq!(sim.params.buoyancy, Simulation::MIN_BUOYANCY);
-        assert!(sim.user_buoyancy_offset >= -Simulation::BUOYANCY_OFFSET_LIMIT);
+        assert_eq!(sim.params.buoyancy, Simulation::MIN_CONFIG_BUOYANCY);
+    }
+
+    /// Regression for review finding P3: `CompactScaler::adapt_simulation` wrote
+    /// `sim.params` directly, so the next reactive poll rebuilt from the un-compacted
+    /// baseline and silently dropped the compact physics scaling.
+    #[test]
+    fn test_set_base_params_makes_compact_scaling_durable() {
+        let profile = crate::widget::CompactProfile {
+            blob_count: 6,
+            radius_scale: 0.85,
+            buoyancy_scale: 1.25,
+            noise_scale: 0.90,
+        };
+        let mut sim = Simulation::new(PhysicsParams::default(), 6, 42);
+        crate::widget::CompactScaler::adapt_simulation(&profile, &mut sim);
+
+        assert_eq!(sim.base_params().buoyancy, 0.80 * 1.25);
+        assert_eq!(sim.base_params().noise, 0.15 * 0.90);
+
+        // A reactive poll must scale around the compact baseline, not erase it.
+        // battery = 1.0 -> buoyancy scale = 0.625 + 1.0 * 0.75 = 1.375
+        // cpu    = 0.0 -> noise scale    = 1.0
+        sim.apply_signals(&SystemSignals::new(0.0, 0.0, 1.0, 0.0));
+        assert!(
+            (sim.params.buoyancy - 0.80 * 1.25 * 1.375).abs() < 1e-4,
+            "compact buoyancy baseline lost after poll: {}",
+            sim.params.buoyancy
+        );
+        assert!(
+            (sim.params.noise - 0.15 * 0.90).abs() < 1e-4,
+            "compact noise baseline lost after poll: {}",
+            sim.params.noise
+        );
+
+        // A user nudge must also preserve the compact baseline.
+        sim.nudge_buoyancy(0.1);
+        assert_eq!(sim.base_params().buoyancy, 0.80 * 1.25);
     }
 
     /// Audio does not drive radius, so it must clear any system-signal radius multiplier

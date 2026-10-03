@@ -80,8 +80,15 @@ impl CompactScaler {
     }
 
     /// Adapts both physics parameters and blob radii of an active simulation using the compact profile.
+    ///
+    /// The adapted physics is installed as the simulation's new configured baseline via
+    /// [`Simulation::set_base_params`](crate::core::Simulation::set_base_params). Writing
+    /// `sim.params` directly would leave the baseline untouched, and the next reactive
+    /// poll or user nudge would rebuild `params` from it, silently discarding the
+    /// compact scaling.
     pub fn adapt_simulation(profile: &CompactProfile, sim: &mut crate::core::Simulation) {
-        sim.params = Self::adapt_physics(profile, sim.params);
+        let adapted = Self::adapt_physics(profile, sim.base_params());
+        sim.set_base_params(adapted);
         sim.apply_radius_scale(profile.radius_scale);
     }
 }
