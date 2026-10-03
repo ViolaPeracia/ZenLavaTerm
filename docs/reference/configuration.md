@@ -1,6 +1,6 @@
 # Configuration Reference
 
-ZenLavaTerm supports rich configuration via a TOML configuration file. A ready-to-copy sample configuration file is available at [docs/configuration.md](file:///home/skids/Documents/code/ZenLavaTerm/docs/configuration.md).
+ZenLavaTerm supports rich configuration via a TOML configuration file. A ready-to-copy sample configuration file is available at [docs/configuration.md](../configuration.md).
 
 ---
 

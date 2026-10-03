@@ -29,7 +29,7 @@ This document outlines the coding standards, style rules, error handling convent
    - Do not trigger `panic!()` in runtime loops.
 2. **Unified Error Type**:
    - Use `lavaterm::Result<T>` (`Result<T, LavaError>`).
-   - Add new variants to `LavaError` in [src/lib.rs](file:///home/skids/Documents/code/ZenLavaTerm/src/lib.rs) if a new error category is required.
+   - Add new variants to `LavaError` in [src/lib.rs](../../src/lib.rs) if a new error category is required.
    - Implement `std::fmt::Display` and `std::error::Error` manually without introducing extra macro dependencies.
 3. **Graceful Fallback**:
    - If optional platform telemetry or audio hardware is missing or errors, fall back to safe synthetic defaults (`SyntheticAudioGenerator`, `MockSystemProvider`) rather than terminating.

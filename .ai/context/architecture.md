@@ -1,6 +1,6 @@
 # ZenLavaTerm Architecture Context for AI Agents
 
-> **Note**: Authoritative human-facing architecture documentation is maintained in [docs/architecture/](file:///home/skids/Documents/code/ZenLavaTerm/docs/architecture/). This file provides a condensed context reference for AI coding agents.
+> **Note**: Authoritative human-facing architecture documentation is maintained in [docs/architecture/](../../docs/architecture/). This file provides a condensed context reference for AI coding agents.
 
 ---
 
@@ -53,18 +53,18 @@ ZenLavaTerm operates on a strictly decoupled, unidirectional data pipeline:
 
 ## 2. Rust Crate Architecture & Module Breakdown
 
-The crate root is [src/lib.rs](file:///home/skids/Documents/code/ZenLavaTerm/src/lib.rs) (`lavaterm`), and the binary entry point is [src/main.rs](file:///home/skids/Documents/code/ZenLavaTerm/src/main.rs):
+The crate root is [src/lib.rs](../../src/lib.rs) (`lavaterm`), and the binary entry point is [src/main.rs](../../src/main.rs):
 
 | Module | Location | Primary Responsibility |
 |---|---|---|
-| **`core`** | [src/core/](file:///home/skids/Documents/code/ZenLavaTerm/src/core/) | Pure mathematical simulation: metaballs, scalar field, thermal physics, interactions. Zero dependencies on crossterm or OS. |
-| **`audio`** | [src/audio/](file:///home/skids/Documents/code/ZenLavaTerm/src/audio/) | CPAL audio capture stream, SPSC lock-free Seqlock ring buffer, Radix-2 FFT spectrum analysis, synthetic fallback. |
-| **`reactive`** | [src/reactive/](file:///home/skids/Documents/code/ZenLavaTerm/src/reactive/) | Cross-platform OS metrics providers (Linux procfs, Windows Win32, macOS Mach kernel). |
-| **`render`** | [src/render/](file:///home/skids/Documents/code/ZenLavaTerm/src/render/) | Virtual framebuffer, RGB interpolation, halfblock, block, and braille ANSI renderers. |
-| **`input`** | [src/input/](file:///home/skids/Documents/code/ZenLavaTerm/src/input/) | Crossterm event mapping, mouse drag vectors, keyboard wave ripples, coordinate inversion. |
-| **`config`** | [src/config/](file:///home/skids/Documents/code/ZenLavaTerm/src/config/) | TOML configuration parser, default paths resolution, Serde validation and field aliases. |
-| **`theme`** | [src/theme/](file:///home/skids/Documents/code/ZenLavaTerm/src/theme/) | Preset palettes, auto-detection, Pywal/Wallust JSON parsers, custom palette files. |
-| **`widget`** | [src/widget/](file:///home/skids/Documents/code/ZenLavaTerm/src/widget/) | Multiplexer detection (tmux/zellij), compact geometry scaling, snapshot rendering, execution policies. |
+| **`core`** | [src/core/](../../src/core/) | Pure mathematical simulation: metaballs, scalar field, thermal physics, interactions. Zero dependencies on crossterm or OS. |
+| **`audio`** | [src/audio/](../../src/audio/) | CPAL audio capture stream, SPSC lock-free Seqlock ring buffer, Radix-2 FFT spectrum analysis, synthetic fallback. |
+| **`reactive`** | [src/reactive/](../../src/reactive/) | Cross-platform OS metrics providers (Linux procfs, Windows Win32, macOS Mach kernel). |
+| **`render`** | [src/render/](../../src/render/) | Virtual framebuffer, RGB interpolation, halfblock, block, and braille ANSI renderers. |
+| **`input`** | [src/input/](../../src/input/) | Crossterm event mapping, mouse drag vectors, keyboard wave ripples, coordinate inversion. |
+| **`config`** | [src/config/](../../src/config/) | TOML configuration parser, default paths resolution, Serde validation and field aliases. |
+| **`theme`** | [src/theme/](../../src/theme/) | Preset palettes, auto-detection, Pywal/Wallust JSON parsers, custom palette files. |
+| **`widget`** | [src/widget/](../../src/widget/) | Multiplexer detection (tmux/zellij), compact geometry scaling, snapshot rendering, execution policies. |
 
 ---
 

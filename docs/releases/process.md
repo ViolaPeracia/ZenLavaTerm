@@ -6,7 +6,7 @@ This document describes the automated release workflow and mandatory release eng
 
 ## 1. Release Workflow Overview
 
-ZenLavaTerm releases are automated via GitHub Actions in [.github/workflows/release.yml](file:///home/skids/Documents/code/ZenLavaTerm/.github/workflows/release.yml). Pushing a valid production git tag (`vX.Y.Z`) triggers cross-platform packaging, checksum generation, SLSA provenance generation, and GitHub Release publication.
+ZenLavaTerm releases are automated via GitHub Actions in [.github/workflows/release.yml](../../.github/workflows/release.yml). Pushing a valid production git tag (`vX.Y.Z`) triggers cross-platform packaging, checksum generation, SLSA provenance generation, and GitHub Release publication.
 
 ---
 

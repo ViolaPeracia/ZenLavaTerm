@@ -8,7 +8,7 @@ Closes # (issue number)
 
 ## Architecture Compliance
 
-- [ ] Complies with guidelines in [AGENTS.md](AGENTS.md) and [.cursor/rules/](.cursor/rules/)
+- [ ] Complies with guidelines in [AGENTS.md](../AGENTS.md) and [.cursor/rules/](../.cursor/rules/)
 - [ ] Unidirectional data flow preserved (`Signals -> Simulation -> Framebuffer -> Renderer -> Terminal`)
 - [ ] No terminal or platform dependencies (`crossterm`, `libc`, `windows-sys`) leaked into `core`
 - [ ] No `unwrap()`, `expect()`, or `panic!()` in production paths (proper error handling with `Result<T, LavaError>`)

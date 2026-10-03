@@ -21,7 +21,7 @@ cargo bench --bench field_and_render -- rasterization
 
 ## 2. Empirical Performance Baselines
 
-The detailed empirical benchmark report is recorded in [docs/benchmarks/benchmark_baseline.md](file:///home/skids/Documents/code/ZenLavaTerm/docs/benchmarks/benchmark_baseline.md).
+The detailed empirical benchmark report is recorded in [docs/benchmarks/benchmark_baseline.md](../benchmarks/benchmark_baseline.md).
 
 ### Key Performance Metrics:
 1. **Scalar Field Evaluation**:
