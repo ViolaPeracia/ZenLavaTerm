@@ -352,6 +352,10 @@ fn run_event_loop(
                             let count = sim.blobs.len();
                             let radius_scale = sim.radius_scale;
                             // Restore configured physics, not reactive-modulated values.
+                            // `radius_scale` is preserved because it derives from viewport
+                            // geometry and would be recomputed identically on restart;
+                            // the user buoyancy offset is deliberately cleared, so Reset
+                            // returns the simulation to a pristine configured state.
                             sim = Simulation::new(sim.base_params(), count, 42);
                             sim.apply_radius_scale(radius_scale);
                             mouse_tracker.reset();

@@ -12,11 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Reactive modes ignored `[simulation]` configuration** (#84): `apply_signals` and `apply_audio_signals` hardcoded `noise = 0.15 * …` and `buoyancy = 0.50 + …`, discarding values the user set in `config.toml` and that `Config::validate()` had already accepted. Modulation is now expressed as a multiplier on the configured base, so `noise = 0.0` stays `0.0` and a high configured `buoyancy` is respected.
 - **Keyboard speed control was dead in reactive modes** (#84): `Action::SpeedUp` / `SlowDown` wrote `sim.params.buoyancy` directly, but the next signal poll overwrote it, so the keys appeared broken. User input is now accumulated as `user_buoyancy_offset` and reapplied on top of the reactive value, making the signal application idempotent.
 - **`Action::Reset` restored modulated physics** (#84): reset rebuilt the simulation from the reactive-modulated `params` instead of the user's configuration. It now uses the new `Simulation::base_params()`.
+- **`Simulation::apply_radius_scale` compounded on repeated calls** (#84): it multiplied `blob.radius` in place, so applying the same scale twice scaled by its square. It now recomputes from the generated base radii, making it idempotent. The bug was latent — no runtime path called it twice on the same simulation — but `Action::Reset` came close.
 - **`cargo clippy -D warnings` failure on newer toolchains** (#84): fixed `clippy::redundant_closure` in `src/audio/native.rs` (`catch_unwind(|| …)` → `catch_unwind(…)`), unblocking the `AGENTS.md` §5 CI gate.
+- **Audio mode retained a stale radius multiplier** (#84): `apply_audio_signals` did not reset `radius_multiplier`, so a radius scale set by system signals would persist if audio signals were ever applied to the same simulation. It now resets to `1.0`. Not reachable today, since `--system` and `--audio` are mutually exclusive.
 
 ### Added
 - `Simulation::nudge_buoyancy(delta)` and `Simulation::base_params()` as the supported entry points for user-driven buoyancy changes and configuration reads.
-- Five regression tests in `src/core/simulation.rs` covering radius variety preservation, config-respect under saturated signals, keyboard offset survival across polls, audio-signal idempotency, and `apply_radius_scale` composition.
+- Five regression tests in `src/core/simulation.rs` covering radius variety preservation, config-respect under saturated signals, keyboard offset survival across polls, audio-signal idempotency, and `apply_radius_scale` composition. Three further tests cover `apply_radius_scale` idempotency, bounded user-offset accumulation, and the audio radius-multiplier reset.
 
 ## [1.0.1] - 2026-09-03 — Codebase Hygiene, Dependency Optimization & Patch Release
 
