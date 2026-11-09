@@ -319,7 +319,7 @@ jobs:
           (cd dist/packaging && tar -czf ../lavaterm-package-manifests-v${VERSION}.tar.gz .)
 
       - name: Create GitHub Release and Upload Assets
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           tag_name: ${{ needs.verify-tag.outputs.tag }}
           name: ZenLavaTerm ${{ needs.verify-tag.outputs.tag }}
