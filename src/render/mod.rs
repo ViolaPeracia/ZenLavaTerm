@@ -15,6 +15,15 @@ pub use halfblock::HalfBlockRenderer;
 use crate::core::Simulation;
 use std::io::Write;
 
+/// Controls how a renderer positions the terminal cursor across rows and frames.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CursorMode {
+    #[default]
+    Absolute,
+    Inline,
+    Stream,
+}
+
 /// Common interface implemented by terminal renderers.
 pub trait Renderer {
     /// Renders the contents of the virtual framebuffer to the provided output writer.

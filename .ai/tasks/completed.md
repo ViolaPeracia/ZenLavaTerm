@@ -6,6 +6,14 @@ This file records historical milestones and completed tasks with verification ev
 
 ## Completed Tasks Log
 
+### [INIT-001] Professional AI-Coding and Documentation Workspace Setup
+- **Date Completed**: 2026-09-03
+- **Summary**:
+  - Established `AGENTS.md` and `CLAUDE.md` repository-wide agent entry points.
+  - Created `.cursor/rules/` (`architecture.mdc`, `rust.mdc`, `testing.mdc`, `documentation.mdc`, `release.mdc`, `security.mdc`).
+  - Created `.ai/` (`context/`, `tasks/`, `decisions/`, `prompts/`) and structured `docs/` (`README.md`, `architecture/`, `development/`, `testing/`, `operations/`, `troubleshooting/`, `reference/`, `releases/`).
+  - Aligned `.github/` templates and validated link integrity.
+
 ### [REL-101] Release v1.0.1 — Hygiene, Dependency Pruning & Patch Release
 - **Date Completed**: 2026-09-03
 - **Git Commit**: `0cfabc9` / `898db12`

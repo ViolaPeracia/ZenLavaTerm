@@ -48,6 +48,7 @@ impl AudioProvider for MockAudioProvider {
 pub struct SyntheticAudioGenerator {
     pub time: f32,
     pub bpm: f32,
+    last_poll: Option<std::time::Instant>,
 }
 
 impl Default for SyntheticAudioGenerator {
@@ -58,7 +59,11 @@ impl Default for SyntheticAudioGenerator {
 
 impl SyntheticAudioGenerator {
     pub fn new(bpm: f32) -> Self {
-        Self { time: 0.0, bpm }
+        Self {
+            time: 0.0,
+            bpm,
+            last_poll: None,
+        }
     }
     pub fn step(&mut self, dt: f32) -> AudioSignals {
         self.time += dt;
@@ -74,12 +79,31 @@ impl SyntheticAudioGenerator {
 
 impl AudioProvider for SyntheticAudioGenerator {
     fn poll_signals(&mut self) -> AudioSignals {
-        self.step(1.0 / 30.0)
+        let now = std::time::Instant::now();
+        let dt = self.last_poll.map_or(1.0 / 30.0, |prev| {
+            now.duration_since(prev).as_secs_f32().clamp(0.0, 0.1)
+        });
+        self.last_poll = Some(now);
+        self.step(dt)
     }
     fn is_live(&self) -> bool {
         false
     }
     fn provider_name(&self) -> &'static str {
         "synthetic"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_synthetic_poll_signals_uses_real_elapsed_time() {
+        let mut gen = SyntheticAudioGenerator::new(120.0);
+        gen.poll_signals();
+        let t1 = gen.time;
+        gen.poll_signals();
+        assert!(gen.time - t1 < 0.01);
     }
 }

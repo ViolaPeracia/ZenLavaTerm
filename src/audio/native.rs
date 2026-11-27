@@ -138,9 +138,8 @@ impl NativeAudioCapture {
                 let channels = config.channels as usize;
                 let sample_rate = config.sample_rate;
 
-                let err_fn = move |err| {
+                let err_fn = move |_err| {
                     stream_alive_cb.store(false, Ordering::SeqCst);
-                    eprintln!("Audio stream error: {}", err);
                 };
 
                 let stream_res = match sample_format {

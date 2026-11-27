@@ -8,6 +8,7 @@ pub struct VirtualFramebuffer {
     pub width: usize,
     pub height: usize,
     pixels: Vec<Rgb>,
+    background: Rgb,
 }
 
 impl VirtualFramebuffer {
@@ -18,6 +19,7 @@ impl VirtualFramebuffer {
             width,
             height,
             pixels: vec![fill; size],
+            background: fill,
         }
     }
 
@@ -32,23 +34,28 @@ impl VirtualFramebuffer {
         let copy_h = self.height.min(new_height);
 
         for y in 0..copy_h {
-            for x in 0..copy_w {
-                let old_idx = y * self.width + x;
-                let new_idx = y * new_width + x;
-                if old_idx < self.pixels.len() && new_idx < new_pixels.len() {
-                    new_pixels[new_idx] = self.pixels[old_idx];
-                }
-            }
+            let old_start = y * self.width;
+            let new_start = y * new_width;
+            new_pixels[new_start..new_start + copy_w]
+                .copy_from_slice(&self.pixels[old_start..old_start + copy_w]);
         }
 
         self.width = new_width;
         self.height = new_height;
         self.pixels = new_pixels;
+        self.background = fill;
     }
 
     /// Clears the entire buffer with a solid fill color.
     pub fn clear(&mut self, fill: Rgb) {
+        self.background = fill;
         self.pixels.fill(fill);
+    }
+
+    /// Returns the background color used to initialize, clear, or resize this framebuffer.
+    #[inline]
+    pub fn background(&self) -> Rgb {
+        self.background
     }
 
     /// Sets the pixel at `(x, y)`. Safely ignores out-of-bounds coordinates.

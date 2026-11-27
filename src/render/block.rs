@@ -2,18 +2,28 @@
 
 use super::color::Rgb;
 use super::framebuffer::VirtualFramebuffer;
-use super::Renderer;
+use super::{CursorMode, Renderer};
 use std::io::{self, Write};
 
 /// Terminal renderer using full block characters (`█`).
 #[derive(Debug, Default)]
 pub struct BlockRenderer {
     last_fg: Option<Rgb>,
+    cursor_mode: CursorMode,
+    has_rendered: bool,
 }
 
 impl BlockRenderer {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Creates a new `BlockRenderer` with the specified cursor positioning mode.
+    pub fn with_cursor_mode(cursor_mode: CursorMode) -> Self {
+        Self {
+            cursor_mode,
+            ..Self::default()
+        }
     }
 }
 
@@ -25,9 +35,29 @@ impl Renderer for BlockRenderer {
 
         self.last_fg = None;
 
+        if self.cursor_mode == CursorMode::Inline && self.has_rendered {
+            if term_rows > 1 {
+                write!(writer, "\r\x1b[{}A", term_rows - 1)?;
+            } else if term_rows == 1 {
+                writer.write_all(b"\r")?;
+            }
+        }
+
         for row in 0..term_rows {
             let row_start = row * term_cols;
-            write!(writer, "\x1b[{};1H", row + 1)?;
+            match self.cursor_mode {
+                CursorMode::Absolute => write!(writer, "\x1b[{};1H", row + 1)?,
+                CursorMode::Inline => {
+                    if row > 0 {
+                        writer.write_all(b"\r\n")?;
+                    }
+                }
+                CursorMode::Stream => {
+                    if row > 0 {
+                        writer.write_all(b"\n")?;
+                    }
+                }
+            }
 
             for col in 0..term_cols {
                 let color = slice[row_start + col];
@@ -42,6 +72,7 @@ impl Renderer for BlockRenderer {
         }
 
         write!(writer, "\x1b[0m")?;
+        self.has_rendered = true;
         Ok(())
     }
 }
@@ -61,5 +92,28 @@ mod tests {
         let text = String::from_utf8_lossy(&output);
         assert!(text.contains("█"));
         assert!(text.contains("\x1b[0m"));
+    }
+
+    #[test]
+    fn test_inline_mode_omits_absolute_row1_move() {
+        let mut renderer = BlockRenderer::with_cursor_mode(super::super::CursorMode::Inline);
+        let fb = VirtualFramebuffer::new(2, 2, Rgb::new(0, 0, 0));
+
+        let mut first = Vec::new();
+        renderer
+            .render(&fb, &mut first)
+            .expect("First render succeeds");
+        let first_text = String::from_utf8_lossy(&first);
+        assert!(!first_text.contains("\x1b[1;1H"));
+        assert!(!first_text.contains("\x1b[2;1H"));
+        assert!(first_text.contains("\r\n"));
+
+        let mut second = Vec::new();
+        renderer
+            .render(&fb, &mut second)
+            .expect("Second render succeeds");
+        let second_text = String::from_utf8_lossy(&second);
+        assert!(second_text.starts_with("\r\x1b[1A"));
+        assert!(!second_text.contains("\x1b[1;1H"));
     }
 }

@@ -56,7 +56,6 @@ extern "C" {
 #[allow(dead_code)]
 pub struct MacOSSystemProvider {
     last_cpu_ticks: Option<(u64, u64)>, // (total, active)
-    last_io_metric: Option<u64>,
 }
 
 impl MacOSSystemProvider {
@@ -152,10 +151,6 @@ impl MacOSSystemProvider {
     fn read_battery_level(&self) -> f32 {
         1.0 // Default to 100%
     }
-
-    fn read_io_activity(&mut self) -> f32 {
-        0.05 // Baseline
-    }
 }
 
 impl SystemProvider for MacOSSystemProvider {
@@ -163,9 +158,8 @@ impl SystemProvider for MacOSSystemProvider {
         let cpu = self.read_cpu_load();
         let mem = self.read_memory_usage();
         let bat = self.read_battery_level();
-        let io = self.read_io_activity();
 
-        SystemSignals::new(cpu, mem, bat, io)
+        SystemSignals::new(cpu, mem, bat, 0.0)
     }
 }
 
