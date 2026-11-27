@@ -55,7 +55,7 @@ This file tracks planned work items and provides standardized templates for defi
 - **Invariants to Preserve**:
   - [ ] Zero behavior changes in public CLI or configuration
   - [ ] Unidirectional data flow maintained
-  - [ ] No regression in passing tests (135+ tests pass)
+  - [ ] No regression in passing tests (140+ tests pass)
 - **Acceptance Criteria**:
   - [ ] Target code simplified or decoupled
   - [ ] `cargo clippy` and `cargo fmt` clean

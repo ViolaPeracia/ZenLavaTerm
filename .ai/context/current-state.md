@@ -1,6 +1,6 @@
 # ZenLavaTerm Current State
 
-> **Last Updated**: 2026-09-03
+> **Last Updated**: 2026-11-28
 > **Current Version**: `1.0.1` (see `Cargo.toml`, git tag `v1.0.1`)
 
 ---
@@ -8,7 +8,7 @@
 ## 1. Release & Codebase Status
 
 - **Crate Version**: `1.0.1` (unreleased fixes pending for 1.0.2)
-- **Git HEAD**: `cd90570` on `main`; reactive-signal fixes on `fix/84-reactive-signal-bugs`
+- **Git HEAD**: `06b9d05` on `main` (v1.0.2 audit & hygiene fixes in progress)
 - **Active Test Suite**:
   - Unit tests: **117 passed**, 0 failed
   - Integration tests: **23 passed**, 0 failed

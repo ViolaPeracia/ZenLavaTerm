@@ -99,11 +99,11 @@
 | Layer | Technology | Purpose |
 |---|---|---|
 | **Language** | [Rust 2021 Edition](https://www.rust-lang.org/) (1.75+) | Memory safety, zero-cost abstractions, maximum concurrency |
-| **Terminal I/O** | [`crossterm` 0.28](https://docs.rs/crossterm) | Raw mode, alternate screen, event polling, ANSI formatting |
+| **Terminal I/O** | [`crossterm` 0.29](https://docs.rs/crossterm) | Raw mode, alternate screen, event polling, ANSI formatting |
 | **CLI Parser** | [`clap` 4.5](https://docs.rs/clap) (with derive) | Ergonomic command-line arguments and flags |
 | **Configuration** | [`serde` 1.0](https://serde.rs/), [`toml` 0.8](https://docs.rs/toml), [`serde_json` 1.0](https://docs.rs/serde_json) | TOML configuration, Pywal/Wallust JSON parsing |
-| **Error Handling** | [`thiserror` 1.0](https://docs.rs/thiserror) | Idiomatic, strongly-typed domain errors |
-| **Benchmarking** | [`criterion` 0.5](https://docs.rs/criterion) | Statistical micro-benchmarks for field math and render loops |
+| **Audio Capture** | [`cpal` 0.18](https://docs.rs/cpal) | Cross-platform real-time audio capture (WASAPI, PipeWire/ALSA, CoreAudio) |
+| **Benchmarking** | [`criterion` 0.8](https://docs.rs/criterion) | Statistical micro-benchmarks for field math and render loops |
 | **CI / CD** | GitHub Actions | Automated linting, multi-platform test matrices, and cross-compiled release packaging |
 
 ---
@@ -136,7 +136,7 @@ Pre-built standalone installers and packages are available on the [GitHub Releas
 - **macOS**:
   - **Universal DMG**: Download `ZenLavaTerm-v<VERSION>-macos-universal.dmg`, open the disk image, and drag `ZenLavaTerm` to your Applications folder.
 
-For detailed platform-specific installation steps, see the [Packaging & Installation Guide](docs/packaging.md).
+For detailed platform-specific installation steps, see the [Packaging & Installation Guide](docs/operations/packaging.md).
 
 ### Build from Source via Cargo
 
@@ -310,7 +310,7 @@ To generate your personal config file:
 ```bash
 # Linux / macOS
 mkdir -p ~/.config/lavaterm
-cp docs/configuration.md ~/.config/lavaterm/config.toml # Or create your custom config
+# See docs/reference/configuration.md and the schema below to populate ~/.config/lavaterm/config.toml
 
 # Windows (PowerShell)
 New-Item -ItemType Directory -Force -Path "$env:APPDATA\lavaterm"
@@ -564,7 +564,7 @@ LavaTerm transforms background operating system hardware metrics into soothing, 
 ┌─────────────────────────────────────────────────────────────┐
 │                 SystemSignals [0.0, 1.0]                    │
 │  - cpu_load: f32       - memory_usage: f32                  │
-│  - battery_level: f32  - io_activity: f32                   │
+│  - battery_level: f32                                       │
 └──────────────────────────────┬──────────────────────────────┘
                                │ Modulates fluid physics
                                ▼
@@ -583,7 +583,6 @@ LavaTerm transforms background operating system hardware metrics into soothing, 
 | **CPU Utilization** | `/proc/stat` delta ticks | `GetSystemTimes` (idle vs total) | `host_statistics64` (`HOST_CPU_LOAD_INFO`) | `[0.0, 1.0]` | Modulates Brownian thermal noise & turbulence: $\text{noise} = 0.15 \times (1.0 + 2.5 \times \text{cpu})$. |
 | **RAM Usage** | `/proc/meminfo` (`MemTotal` vs `MemAvailable`) | `GlobalMemoryStatusEx` (`ullTotalPhys` vs `ullAvailPhys`) | `host_statistics64` (`HOST_VM_INFO64`) | `[0.0, 1.0]` | Dynamically scales blob volume: $R = R_0 \times (0.85 + 0.40 \times \text{ram})$. |
 | **Battery Level** | `/sys/class/power_supply/BAT*/capacity` | `GetSystemPowerStatus` (`BatteryLifePercent`) | Neutral baseline (`1.0`) | `[0.0, 1.0]` | Regulates thermal convection: $\text{buoyancy} = 0.50 + 0.60 \times \text{bat}$. |
-| **Disk Storage I/O**| `/proc/diskstats` delta sectors | `GetProcessIoCounters` delta transfer bytes | Baseline (`0.05`) | `[0.0, 1.0]` | Imparts subtle micro-perturbations during active I/O operations. |
 
 ---
 
