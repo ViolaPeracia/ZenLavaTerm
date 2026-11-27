@@ -2,34 +2,10 @@
 
 use crate::core::Simulation;
 use crate::render::{
-    rasterize_simulation_options, BrailleRenderer, ColorPalette, VirtualFramebuffer,
+    rasterize_simulation_options, BlockRenderer, BrailleRenderer, ColorPalette, CursorMode,
+    HalfBlockRenderer, Renderer, VirtualFramebuffer,
 };
 use crate::{LavaError, Result};
-use std::io::Write;
-
-/// Options configuring single-frame snapshot rendering.
-#[derive(Debug, Clone, PartialEq)]
-pub struct SnapshotOptions<'a> {
-    pub cols: u16,
-    pub rows: u16,
-    pub renderer_type: &'a str,
-    pub threshold: f32,
-    pub warmup_steps: usize,
-    pub gradient: bool,
-}
-
-impl<'a> Default for SnapshotOptions<'a> {
-    fn default() -> Self {
-        Self {
-            cols: 80,
-            rows: 24,
-            renderer_type: "halfblock",
-            threshold: 1.0,
-            warmup_steps: 5,
-            gradient: true,
-        }
-    }
-}
 
 /// Serializes a single frame of the simulation into a standalone ANSI True Color string with explicit gradient control.
 #[allow(clippy::too_many_arguments)]
@@ -67,78 +43,12 @@ pub fn render_snapshot_options(
 
     // 3. Serialize into in-memory ANSI string without absolute cursor positioning
     let mut out = Vec::with_capacity(cols as usize * rows as usize * 30);
-
-    match renderer_type {
-        "block" => {
-            let mut last_fg = None;
-            for row in 0..rows as usize {
-                if row > 0 {
-                    out.write_all(b"\n")?;
-                }
-                for col in 0..cols as usize {
-                    let pixel = fb.get_pixel(col, row).unwrap_or_default();
-                    if last_fg != Some(pixel) {
-                        write!(out, "\x1b[38;2;{};{};{}m", pixel.r, pixel.g, pixel.b)?;
-                        last_fg = Some(pixel);
-                    }
-                    out.write_all("█".as_bytes())?;
-                }
-            }
-            write!(out, "\x1b[0m")?;
-        }
-        "braille" => {
-            let mut last_fg = None;
-            let bg_color = palette.background;
-            for row in 0..rows as usize {
-                if row > 0 {
-                    out.write_all(b"\n")?;
-                }
-                for col in 0..cols as usize {
-                    let (ch, fg) = BrailleRenderer::compute_cell(&fb, col, row, bg_color);
-                    let current_fg = fg.unwrap_or(bg_color);
-                    if last_fg != Some(current_fg) {
-                        write!(
-                            out,
-                            "\x1b[38;2;{};{};{}m",
-                            current_fg.r, current_fg.g, current_fg.b
-                        )?;
-                        last_fg = Some(current_fg);
-                    }
-                    let mut utf8_buf = [0u8; 4];
-                    let encoded = ch.encode_utf8(&mut utf8_buf);
-                    out.write_all(encoded.as_bytes())?;
-                }
-            }
-            write!(out, "\x1b[0m")?;
-        }
-        _ => {
-            // Halfblock (default)
-            let mut last_fg = None;
-            let mut last_bg = None;
-            for row in 0..rows as usize {
-                if row > 0 {
-                    out.write_all(b"\n")?;
-                }
-                let top_y = row * 2;
-                let btm_y = top_y + 1;
-                for col in 0..cols as usize {
-                    let top_col = fb.get_pixel(col, top_y).unwrap_or_default();
-                    let btm_col = fb.get_pixel(col, btm_y).unwrap_or_default();
-
-                    if last_fg != Some(top_col) {
-                        write!(out, "\x1b[38;2;{};{};{}m", top_col.r, top_col.g, top_col.b)?;
-                        last_fg = Some(top_col);
-                    }
-                    if last_bg != Some(btm_col) {
-                        write!(out, "\x1b[48;2;{};{};{}m", btm_col.r, btm_col.g, btm_col.b)?;
-                        last_bg = Some(btm_col);
-                    }
-                    out.write_all("▀".as_bytes())?;
-                }
-            }
-            write!(out, "\x1b[0m")?;
-        }
-    }
+    let mut renderer: Box<dyn Renderer> = match renderer_type {
+        "block" => Box::new(BlockRenderer::with_cursor_mode(CursorMode::Stream)),
+        "braille" => Box::new(BrailleRenderer::with_cursor_mode(CursorMode::Stream)),
+        _ => Box::new(HalfBlockRenderer::with_cursor_mode(CursorMode::Stream)),
+    };
+    renderer.render(&fb, &mut out)?;
 
     String::from_utf8(out).map_err(|e| LavaError::Render(e.to_string()))
 }
