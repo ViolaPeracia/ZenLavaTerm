@@ -1,7 +1,6 @@
 //! Interactive physics models for mouse clicks, dragging, scrolling, and keyboard ripples.
 
 use super::metaball::Blob;
-use super::physics::PhysicsParams;
 
 /// High-level interaction domain representation.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -93,22 +92,6 @@ where
         blob.vx = (blob.vx + rx * i_clamped * 0.05).clamp(-2.0, 2.0);
         blob.vy = (blob.vy + ry * i_clamped * 0.05).clamp(-2.0, 2.0);
     }
-}
-
-/// Applies pressure modulation to physics parameters and convective state.
-///
-/// # Not used by the runtime
-///
-/// `Simulation::apply_interaction` routes [`Interaction::Pressure`] through
-/// [`Simulation::nudge_buoyancy`](crate::core::Simulation::nudge_buoyancy) instead,
-/// so this free function is no longer on the runtime path. It is kept because
-/// `lavaterm::core::interaction` is public API.
-///
-/// Do **not** call this on `Simulation::params.buoyancy`: `Simulation` recomputes
-/// that field from its configured base on every reactive poll, so the write would
-/// be silently discarded. Use `Simulation::nudge_buoyancy` instead.
-pub fn apply_pressure(params: &mut PhysicsParams, delta: f32) {
-    params.buoyancy = (params.buoyancy + delta * 0.15).clamp(0.1, 3.0);
 }
 
 /// Applies localized heating or cooling to blobs in `radius`.
@@ -218,18 +201,6 @@ mod tests {
         assert!(blobs[0].vy > 0.0);
         assert!(blobs[0].vx <= 2.0);
         assert!(blobs[0].vy <= 2.0);
-    }
-
-    #[test]
-    fn test_pressure_modulates_buoyancy() {
-        let mut params = PhysicsParams::default();
-        let initial_buoyancy = params.buoyancy;
-
-        apply_pressure(&mut params, 1.0);
-        assert!(params.buoyancy > initial_buoyancy);
-
-        apply_pressure(&mut params, -2.0);
-        assert!(params.buoyancy < initial_buoyancy);
     }
 
     #[test]

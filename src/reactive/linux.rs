@@ -11,9 +11,7 @@ pub struct LinuxSystemProvider {
     stat_path: PathBuf,
     meminfo_path: PathBuf,
     battery_dir: PathBuf,
-    diskstats_path: PathBuf,
     last_cpu: Option<(u64, u64)>, // (total, active)
-    last_io_sectors: Option<u64>,
 }
 
 impl Default for LinuxSystemProvider {
@@ -22,9 +20,7 @@ impl Default for LinuxSystemProvider {
             stat_path: PathBuf::from("/proc/stat"),
             meminfo_path: PathBuf::from("/proc/meminfo"),
             battery_dir: PathBuf::from("/sys/class/power_supply"),
-            diskstats_path: PathBuf::from("/proc/diskstats"),
             last_cpu: None,
-            last_io_sectors: None,
         }
     }
 }
@@ -35,15 +31,13 @@ impl LinuxSystemProvider {
         stat_path: impl AsRef<Path>,
         meminfo_path: impl AsRef<Path>,
         battery_dir: impl AsRef<Path>,
-        diskstats_path: impl AsRef<Path>,
+        _diskstats_path: impl AsRef<Path>,
     ) -> Self {
         Self {
             stat_path: stat_path.as_ref().to_path_buf(),
             meminfo_path: meminfo_path.as_ref().to_path_buf(),
             battery_dir: battery_dir.as_ref().to_path_buf(),
-            diskstats_path: diskstats_path.as_ref().to_path_buf(),
             last_cpu: None,
-            last_io_sectors: None,
         }
     }
 
@@ -113,28 +107,6 @@ impl LinuxSystemProvider {
             .map(|cap| (cap / 100.0).clamp(0.0, 1.0))
     }
 
-    /// Parses total disk sectors read & written from `/proc/diskstats`.
-    pub(crate) fn parse_diskstats(content: &str) -> u64 {
-        let mut total_sectors: u64 = 0;
-        for line in content.lines() {
-            // ponytail: Vec allocation per line; use split_whitespace().nth(2) iterator chaining if diskstats parsing overhead matters
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            // Typical diskstats: major minor dev_name reads_completed reads_merged sectors_read ms_reading writes_completed writes_merged sectors_written ...
-            if parts.len() >= 10 {
-                let dev_name = parts[2];
-                // Filter partition devices (keep main block devices like sda, nvme0n1, vda)
-                if !dev_name.starts_with("loop") && !dev_name.starts_with("ram") {
-                    let reads_sec = parts[5].parse::<u64>().unwrap_or(0);
-                    let writes_sec = parts[9].parse::<u64>().unwrap_or(0);
-                    total_sectors = total_sectors
-                        .saturating_add(reads_sec)
-                        .saturating_add(writes_sec);
-                }
-            }
-        }
-        total_sectors
-    }
-
     fn read_cpu_load(&mut self) -> f32 {
         // ponytail: re-reads and allocates /proc files each poll; keep open fds/reusable buffer if poll_interval < 50ms
         if let Ok(content) = fs::read_to_string(&self.stat_path) {
@@ -184,22 +156,6 @@ impl LinuxSystemProvider {
         }
         1.0 // Defaults to 100% (e.g. desktop on AC power)
     }
-
-    fn read_io_activity(&mut self) -> f32 {
-        if let Ok(content) = fs::read_to_string(&self.diskstats_path) {
-            let total_sectors = Self::parse_diskstats(&content);
-            if let Some(prev) = self.last_io_sectors {
-                let delta = total_sectors.saturating_sub(prev);
-                self.last_io_sectors = Some(total_sectors);
-                // Normalize: 1000 sectors (~500KB) delta mapped to ~0.5 activity
-                let normalized = (delta as f32 / 2000.0).clamp(0.0, 1.0);
-                return normalized;
-            } else {
-                self.last_io_sectors = Some(total_sectors);
-            }
-        }
-        0.05
-    }
 }
 
 impl SystemProvider for LinuxSystemProvider {
@@ -207,9 +163,8 @@ impl SystemProvider for LinuxSystemProvider {
         let cpu = self.read_cpu_load();
         let mem = self.read_memory_usage();
         let bat = self.read_battery_level();
-        let io = self.read_io_activity();
 
-        SystemSignals::new(cpu, mem, bat, io)
+        SystemSignals::new(cpu, mem, bat, 0.0)
     }
 }
 
@@ -243,13 +198,6 @@ mod tests {
 
         let full_sample = "100\n";
         assert_eq!(LinuxSystemProvider::parse_battery(full_sample), Some(1.00));
-    }
-
-    #[test]
-    fn test_parse_diskstats_valid() {
-        let diskstats_sample = "   8       0 sda 100 0 2000 50 300 0 4000 60 0 0 0\n   7       0 loop0 10 0 20 5 0 0 0 0 0 0 0\n";
-        let total = LinuxSystemProvider::parse_diskstats(diskstats_sample);
-        assert_eq!(total, 6000);
     }
 
     #[test]

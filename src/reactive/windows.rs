@@ -44,17 +44,6 @@ impl FileTime {
 }
 
 #[cfg(target_os = "windows")]
-#[repr(C)]
-struct IoCounters {
-    read_operation_count: u64,
-    write_operation_count: u64,
-    other_operation_count: u64,
-    read_transfer_count: u64,
-    write_transfer_count: u64,
-    other_transfer_count: u64,
-}
-
-#[cfg(target_os = "windows")]
 extern "system" {
     fn GlobalMemoryStatusEx(lpBuffer: *mut MemoryStatusEx) -> i32;
     fn GetSystemPowerStatus(lpSystemPowerStatus: *mut SystemPowerStatus) -> i32;
@@ -63,17 +52,14 @@ extern "system" {
         lpKernelTime: *mut FileTime,
         lpUserTime: *mut FileTime,
     ) -> i32;
-    fn GetCurrentProcess() -> *mut std::ffi::c_void;
-    fn GetProcessIoCounters(hProcess: *mut std::ffi::c_void, lpIoCounters: *mut IoCounters) -> i32;
 }
 
-/// Native Windows system metrics provider reading CPU, RAM, Battery, and I/O.
+/// Native Windows system metrics provider reading CPU, RAM, and Battery.
 #[derive(Debug, Default)]
 #[allow(dead_code)]
 pub struct WindowsSystemProvider {
     last_idle: Option<u64>,
     last_kernel_plus_user: Option<u64>,
-    last_io_bytes: Option<u64>,
 }
 
 impl WindowsSystemProvider {
@@ -188,43 +174,6 @@ impl WindowsSystemProvider {
     fn read_battery_level(&self) -> f32 {
         1.0
     }
-
-    #[cfg(target_os = "windows")]
-    fn read_io_activity(&mut self) -> f32 {
-        let mut io_counters = IoCounters {
-            read_operation_count: 0,
-            write_operation_count: 0,
-            other_operation_count: 0,
-            read_transfer_count: 0,
-            write_transfer_count: 0,
-            other_transfer_count: 0,
-        };
-
-        let process = unsafe { GetCurrentProcess() };
-        let ret = unsafe { GetProcessIoCounters(process, &mut io_counters as *mut _) };
-
-        if ret != 0 {
-            let total_bytes = io_counters
-                .read_transfer_count
-                .saturating_add(io_counters.write_transfer_count);
-
-            if let Some(prev) = self.last_io_bytes {
-                let delta = total_bytes.saturating_sub(prev);
-                self.last_io_bytes = Some(total_bytes);
-                // Map ~1MB delta to ~0.5 activity
-                return (delta as f32 / (2.0 * 1024.0 * 1024.0)).clamp(0.0, 1.0);
-            } else {
-                self.last_io_bytes = Some(total_bytes);
-            }
-        }
-
-        0.05
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    fn read_io_activity(&mut self) -> f32 {
-        0.05
-    }
 }
 
 impl SystemProvider for WindowsSystemProvider {
@@ -232,9 +181,8 @@ impl SystemProvider for WindowsSystemProvider {
         let cpu = self.read_cpu_load();
         let mem = self.read_memory_usage();
         let bat = self.read_battery_level();
-        let io = self.read_io_activity();
 
-        SystemSignals::new(cpu, mem, bat, io)
+        SystemSignals::new(cpu, mem, bat, 0.0)
     }
 }
 

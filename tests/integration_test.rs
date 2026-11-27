@@ -571,7 +571,7 @@ fn test_phase11_linux_provider_delta_transition() {
         "CPU load delta should calculate ~0.50, got {}",
         s2.cpu_load
     );
-    assert!(s2.io_activity > 0.0, "IO activity delta should be non-zero");
+    assert_eq!(s2.io_activity, 0.0);
 
     // Cleanup
     let _ = fs::remove_file(&stat_file);
