@@ -104,6 +104,11 @@ pub fn resolve_policy(input: &PolicyInput) -> Result<ResolvedPolicy> {
             "Target FPS must be greater than zero".to_string(),
         ));
     }
+    if target_fps > 240 {
+        return Err(LavaError::Config(
+            "Target FPS must be between 1 and 240".to_string(),
+        ));
+    }
 
     // 4. Resolve Compact Policy
     // --widget implies compact mode; --compact forces it; toml [widget].compact can configure it
@@ -120,6 +125,11 @@ pub fn resolve_policy(input: &PolicyInput) -> Result<ResolvedPolicy> {
             if w == 0 || h == 0 {
                 return Err(LavaError::Config(
                     "Explicit dimensions (width/height) must be greater than zero".to_string(),
+                ));
+            }
+            if w > 1000 || h > 1000 {
+                return Err(LavaError::Config(
+                    "Explicit dimensions (width/height) must be between 1 and 1000".to_string(),
                 ));
             }
             Some((w, h))
@@ -252,5 +262,47 @@ mod tests {
         };
         let policy = resolve_policy(&input_valid).expect("Valid dimensions");
         assert_eq!(policy.explicit_dimensions, Some((20, 5)));
+    }
+
+    #[test]
+    fn test_fps_above_240_rejected() {
+        let input_max = PolicyInput {
+            cli_fps: Some(240),
+            ..Default::default()
+        };
+        assert!(resolve_policy(&input_max).is_ok());
+
+        let input_over = PolicyInput {
+            cli_fps: Some(241),
+            ..Default::default()
+        };
+        let err = resolve_policy(&input_over).expect_err("FPS > 240 must be rejected");
+        assert!(err.to_string().contains("between 1 and 240"));
+    }
+
+    #[test]
+    fn test_dimensions_above_1000_rejected() {
+        let input_max = PolicyInput {
+            cli_width: Some(1000),
+            cli_height: Some(1000),
+            ..Default::default()
+        };
+        assert!(resolve_policy(&input_max).is_ok());
+
+        let input_wide = PolicyInput {
+            cli_width: Some(1001),
+            cli_height: Some(50),
+            ..Default::default()
+        };
+        let err_w = resolve_policy(&input_wide).expect_err("Width > 1000 must be rejected");
+        assert!(err_w.to_string().contains("between 1 and 1000"));
+
+        let input_tall = PolicyInput {
+            cli_width: Some(50),
+            cli_height: Some(1001),
+            ..Default::default()
+        };
+        let err_h = resolve_policy(&input_tall).expect_err("Height > 1000 must be rejected");
+        assert!(err_h.to_string().contains("between 1 and 1000"));
     }
 }

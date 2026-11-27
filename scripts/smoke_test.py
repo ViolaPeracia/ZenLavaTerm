@@ -63,12 +63,19 @@ def test_headless_audio():
     assert "Headless simulation completed successfully." in proc.stdout
 
 def test_headless_system_audio():
-    proc = run_command_checked(
-        [BINARY_PATH, "--headless", "--frames", "30", "--system", "--audio"],
-        "Headless System + Audio Reactive Simulation"
-    )
-    assert "system=true, audio=true" in proc.stdout
-    assert "Headless simulation completed successfully." in proc.stdout
+    log_test("Headless System + Audio Conflict Rejection")
+    args = [BINARY_PATH, "--headless", "--frames", "30", "--system", "--audio"]
+    print(f"Command: {' '.join(args)}")
+    proc = subprocess.run(args, capture_output=True, text=True, timeout=10)
+    print(f"Exit code: {proc.returncode}")
+    if proc.stdout:
+        print("--- stdout ---")
+        print(proc.stdout.strip())
+    if proc.stderr:
+        print("--- stderr ---")
+        print(proc.stderr.strip())
+    assert proc.returncode != 0, "Expected non-zero exit code when combining --system and --audio"
+    assert "conflict" in proc.stderr.lower(), f"Expected conflict message in stderr, got: {proc.stderr}"
 
 def test_snapshot():
     proc = run_command_checked(

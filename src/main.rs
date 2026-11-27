@@ -14,7 +14,7 @@ use lavaterm::{
     input::{map_key_event_with_ripple, Action, MouseTracker},
     reactive::default_system_provider,
     render::{
-        rasterize_simulation_options, BlockRenderer, BrailleRenderer, ColorPalette,
+        rasterize_simulation_options, BlockRenderer, BrailleRenderer, ColorPalette, CursorMode,
         HalfBlockRenderer, Renderer, VirtualFramebuffer,
     },
     theme::{load_custom_theme_file, resolve_theme},
@@ -123,6 +123,35 @@ struct Cli {
     /// Number of frames to step when in headless mode
     #[arg(long, default_value_t = 60)]
     frames: usize,
+}
+
+const DEFAULT_SEED: u64 = 1337;
+
+struct TerminalGuard {
+    raw_mode: bool,
+    alternate_screen: bool,
+    mouse_enabled: bool,
+    cursor_hidden: bool,
+}
+
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        let mut out = stdout();
+        if self.mouse_enabled {
+            let _ = execute!(out, DisableMouseCapture);
+        }
+        if self.alternate_screen && self.cursor_hidden {
+            let _ = execute!(out, LeaveAlternateScreen, cursor::Show);
+        } else if self.alternate_screen {
+            let _ = execute!(out, LeaveAlternateScreen);
+        } else if self.cursor_hidden {
+            let _ = execute!(out, cursor::Show);
+        }
+        let _ = out.flush();
+        if self.raw_mode {
+            let _ = terminal::disable_raw_mode();
+        }
+    }
 }
 
 fn restore_terminal(alternate_screen: bool, mouse_enabled: bool) {
@@ -276,17 +305,45 @@ fn run_event_loop(
     let shutdown_flag = Arc::new(AtomicBool::new(false));
     setup_signal_handler(Arc::clone(&shutdown_flag));
 
+    // Initialize providers before entering raw mode so any initialization errors
+    // or stderr fallback warnings never corrupt raw terminal output.
+    let mut sys_provider = if opts.system_reactive {
+        Some(default_system_provider())
+    } else {
+        None
+    };
+    let mut audio_provider = if opts.audio_reactive {
+        Some(create_audio_provider(&opts.audio_config)?)
+    } else {
+        None
+    };
+    let mut last_metric_poll = Instant::now();
+    let poll_duration = Duration::from_millis(opts.poll_interval_ms.max(100));
+    let mut current_sys_signals = sys_provider.as_mut().map(|p| p.poll_signals());
+
+    let mut guard = TerminalGuard {
+        raw_mode: false,
+        alternate_screen: false,
+        mouse_enabled: false,
+        cursor_hidden: false,
+    };
+
     terminal::enable_raw_mode()?;
+    guard.raw_mode = true;
+
     let mut out = BufWriter::with_capacity(64 * 1024, stdout());
 
     if is_fullscreen {
         execute!(out, EnterAlternateScreen, cursor::Hide)?;
+        guard.alternate_screen = true;
+        guard.cursor_hidden = true;
     } else {
         execute!(out, cursor::Hide)?;
+        guard.cursor_hidden = true;
     }
 
-    if opts.mouse_enabled {
-        let _ = execute!(out, EnableMouseCapture);
+    if opts.mouse_enabled && execute!(out, EnableMouseCapture).is_ok() {
+        guard.mouse_enabled = true;
     }
 
     let (term_cols, term_rows) = terminal::size().unwrap_or((80, 24));
@@ -301,31 +358,22 @@ fn run_event_loop(
     let (v_width, v_height) = framebuffer_dimensions(cols, rows, &opts.renderer_type);
     let mut fb = VirtualFramebuffer::new(v_width, v_height, palette.background);
 
+    let cursor_mode = if matches!(mode, InteractiveMode::Inline { .. }) {
+        CursorMode::Inline
+    } else {
+        CursorMode::Absolute
+    };
+
     let mut renderer: Box<dyn Renderer> = match opts.renderer_type.as_str() {
-        "block" => Box::new(BlockRenderer::new()),
-        "braille" => Box::new(BrailleRenderer::new()),
-        _ => Box::new(HalfBlockRenderer::new()),
+        "block" => Box::new(BlockRenderer::with_cursor_mode(cursor_mode)),
+        "braille" => Box::new(BrailleRenderer::with_cursor_mode(cursor_mode)),
+        _ => Box::new(HalfBlockRenderer::with_cursor_mode(cursor_mode)),
     };
 
     let mut mouse_tracker = MouseTracker::new();
     let target_frame_duration = Duration::from_secs_f32(1.0 / opts.fps as f32);
     let mut last_instant = Instant::now();
     let mut paused = false;
-
-    let mut sys_provider = if opts.system_reactive {
-        Some(default_system_provider())
-    } else {
-        None
-    };
-    let mut audio_provider = if opts.audio_reactive {
-        Some(create_audio_provider(&opts.audio_config)?)
-    } else {
-        None
-    };
-
-    let mut last_metric_poll = Instant::now();
-    let poll_duration = Duration::from_millis(opts.poll_interval_ms.max(100));
-    let mut current_sys_signals = sys_provider.as_mut().map(|p| p.poll_signals());
 
     let loop_result = (|| -> Result<()> {
         loop {
@@ -356,7 +404,7 @@ fn run_event_loop(
                             // geometry and would be recomputed identically on restart;
                             // the user buoyancy offset is deliberately cleared, so Reset
                             // returns the simulation to a pristine configured state.
-                            sim = Simulation::new(sim.base_params(), count, 42);
+                            sim = Simulation::new(sim.base_params(), count, DEFAULT_SEED);
                             sim.apply_radius_scale(radius_scale);
                             mouse_tracker.reset();
                         }
@@ -426,22 +474,20 @@ fn run_event_loop(
         }
     })();
 
-    if opts.mouse_enabled {
-        let _ = execute!(out, DisableMouseCapture);
-    }
-    if is_fullscreen {
-        let _ = execute!(out, LeaveAlternateScreen, cursor::Show);
-    } else {
-        let _ = execute!(out, cursor::Show);
-    }
     let _ = out.flush();
-    let _ = terminal::disable_raw_mode();
+    drop(out);
+    drop(guard);
 
     loop_result
 }
 
 fn main() -> std::process::ExitCode {
     let cli = Cli::parse();
+
+    if cli.system && cli.audio {
+        eprintln!("Configuration/Policy error: Conflict: --system and --audio cannot be combined");
+        return std::process::ExitCode::FAILURE;
+    }
 
     if cli.list_audio_devices {
         let devices = list_audio_devices();
@@ -460,7 +506,7 @@ fn main() -> std::process::ExitCode {
         return std::process::ExitCode::SUCCESS;
     }
 
-    let config = match load_config(cli.config.as_deref()) {
+    let mut config = match load_config(cli.config.as_deref()) {
         Ok(c) => c,
         Err(err) => {
             eprintln!("Error loading configuration: {err}");
@@ -495,10 +541,33 @@ fn main() -> std::process::ExitCode {
         }
     };
 
-    let base_blob_count = cli.blobs.unwrap_or(config.simulation.blobs);
-    let renderer_type = cli.renderer.unwrap_or(config.render.renderer);
-    let system_reactive = cli.system || config.reactive.enabled;
-    let audio_reactive = cli.audio || config.audio.enabled;
+    if let Some(blobs) = cli.blobs {
+        config.simulation.blobs = blobs;
+    }
+    if let Some(renderer) = cli.renderer {
+        config.render.renderer = renderer;
+    }
+    if let Some(shockwave_force) = cli.shockwave_force {
+        config.interaction.shockwave_force = shockwave_force;
+    }
+    if let Some(stir_force) = cli.stir_force {
+        config.interaction.stir_force = stir_force;
+    }
+    config.render.fps = policy.target_fps;
+    if let Some((w, h)) = policy.explicit_dimensions {
+        config.widget.width = Some(w);
+        config.widget.height = Some(h);
+    }
+
+    if let Err(err) = config.validate() {
+        eprintln!("Configuration/Policy error: {err}");
+        return std::process::ExitCode::FAILURE;
+    }
+
+    let base_blob_count = config.simulation.blobs;
+    let renderer_type = config.render.renderer.clone();
+    let audio_reactive = cli.audio || (!cli.system && config.audio.enabled);
+    let system_reactive = !audio_reactive && (cli.system || config.reactive.enabled);
     let mut audio_config = config.audio.clone();
     if cli.audio {
         audio_config.enabled = true;
@@ -522,10 +591,8 @@ fn main() -> std::process::ExitCode {
     } else {
         config.interaction.keyboard_ripple
     };
-    let shockwave_force = cli
-        .shockwave_force
-        .unwrap_or(config.interaction.shockwave_force);
-    let stir_force = cli.stir_force.unwrap_or(config.interaction.stir_force);
+    let shockwave_force = config.interaction.shockwave_force;
+    let stir_force = config.interaction.stir_force;
 
     let base_physics = PhysicsParams {
         gravity: config.simulation.gravity,
@@ -577,7 +644,7 @@ fn main() -> std::process::ExitCode {
         (base_blob_count, base_physics, None)
     };
 
-    let mut sim = Simulation::new(physics, blob_count, 1337);
+    let mut sim = Simulation::new(physics, blob_count, DEFAULT_SEED);
     if let Some(profile) = profile_opt {
         sim.apply_radius_scale(profile.radius_scale);
     }

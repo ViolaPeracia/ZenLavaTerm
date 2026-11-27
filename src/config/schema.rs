@@ -94,13 +94,13 @@ impl Config {
             return Err("widget.fps must be between 1 and 240".to_string());
         }
         if let Some(w) = self.widget.width {
-            if w == 0 {
-                return Err("widget.width must be greater than 0".to_string());
+            if w == 0 || w > 1000 {
+                return Err("widget.width must be between 1 and 1000".to_string());
             }
         }
         if let Some(h) = self.widget.height {
-            if h == 0 {
-                return Err("widget.height must be greater than 0".to_string());
+            if h == 0 || h > 1000 {
+                return Err("widget.height must be between 1 and 1000".to_string());
             }
         }
         let valid_renderers = ["halfblock", "block", "braille"];
@@ -586,5 +586,29 @@ mod tests {
 
         config.simulation.thermal_transfer_rate = 1.5;
         assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_widget_dimensions_upper_bound_validated() {
+        let mut config = Config::default();
+
+        config.widget.width = Some(1000);
+        config.widget.height = Some(1000);
+        assert!(config.validate().is_ok());
+
+        config.widget.width = Some(1001);
+        assert!(config.validate().is_err());
+
+        config.widget.width = Some(100);
+        config.widget.height = Some(1001);
+        assert!(config.validate().is_err());
+
+        config.widget.width = Some(0);
+        config.widget.height = Some(100);
+        assert!(config.validate().is_err());
+
+        config.widget.width = Some(100);
+        config.widget.height = Some(0);
+        assert!(config.validate().is_err());
     }
 }
