@@ -1,7 +1,7 @@
 class Lavaterm < Formula
   desc "Terminal-native ambient lava lamp and metaball visualizer"
   homepage "https://github.com/ViolaPeracia/ZenLavaTerm"
-  url "https://github.com/ViolaPeracia/ZenLavaTerm/archive/refs/tags/v2.0.0.tar.gz"
+  url "https://github.com/ViolaPeracia/ZenLavaTerm/archive/refs/tags/v2.1.0.tar.gz"
   sha256 "__SOURCE_SHA__"
   license "Apache-2.0"
   head "https://github.com/ViolaPeracia/ZenLavaTerm.git", branch: "main"

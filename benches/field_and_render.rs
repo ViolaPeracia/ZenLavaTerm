@@ -6,8 +6,9 @@ use lavaterm::{
     core::{PhysicsParams, Simulation},
     reactive::SystemSignals,
     render::{
-        rasterize_simulation, BlockRenderer, BrailleRenderer, ColorPalette, HalfBlockRenderer,
-        RasterizeOptions, Renderer, VirtualFramebuffer,
+        rasterize_simulation, BlockRenderer, BrailleRenderer, ColorPalette, CursorMode,
+        HalfBlockRenderer, KittyRenderer, RasterizeOptions, Renderer, SixelRenderer,
+        VirtualFramebuffer,
     },
     widget::{CompactProfile, CompactScaler},
 };
@@ -122,6 +123,32 @@ fn bench_renderers(c: &mut Criterion) {
             sink.clear();
             braille_renderer
                 .render(&braille_fb, &mut sink)
+                .expect("render succeeds");
+            black_box(sink.len());
+        });
+    });
+
+    let mut gfx_fb = VirtualFramebuffer::new(240, 144, palette.background);
+    let gfx_opts = RasterizeOptions::for_renderer("kitty", 1.0, true, true, false);
+    rasterize_simulation(&sim, &mut gfx_fb, &palette, &gfx_opts);
+
+    let mut kitty_renderer = KittyRenderer::with_cursor_mode(CursorMode::Absolute, 80, 24);
+    group.bench_function("kitty_240x144", |b| {
+        b.iter(|| {
+            sink.clear();
+            kitty_renderer
+                .render(&gfx_fb, &mut sink)
+                .expect("render succeeds");
+            black_box(sink.len());
+        });
+    });
+
+    let mut sixel_renderer = SixelRenderer::new();
+    group.bench_function("sixel_240x144", |b| {
+        b.iter(|| {
+            sink.clear();
+            sixel_renderer
+                .render(&gfx_fb, &mut sink)
                 .expect("render succeeds");
             black_box(sink.len());
         });

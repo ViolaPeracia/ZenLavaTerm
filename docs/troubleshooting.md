@@ -77,6 +77,15 @@ If your terminal or font cannot render half-block (`▀`) or Braille (`U+2800`..
 lavaterm --renderer block
 ```
 
+## Kitty Graphics or Sixel output looks blank or prints raw escape text
+
+High-resolution graphics renderers require terminal support for their protocol:
+
+- `-r kitty` requires a Kitty Graphics Protocol terminal (**Kitty**, **Ghostty**, or **WezTerm**).
+- `-r sixel` requires a DEC Sixel-capable terminal (**Windows Terminal**, **WezTerm**, **Foot**, **Konsole**, **iTerm2**, or **XTerm**).
+
+If your current terminal does not support the selected graphics protocol (or `tmux` is not configured with passthrough), press `Ctrl+o` during a session or pass `-r halfblock` to return to universal Unicode TrueColor rendering.
+
 ## Terminal cursor or raw mode not restored
 
 If LavaTerm is terminated abruptly (for example with `SIGKILL`) and the cursor remains hidden or keystrokes are not echoed, reset the terminal state:

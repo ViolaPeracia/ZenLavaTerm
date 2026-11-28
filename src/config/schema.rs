@@ -104,10 +104,10 @@ impl Config {
                 return Err("widget.height must be between 1 and 1000".to_string());
             }
         }
-        let valid_renderers = ["halfblock", "block", "braille"];
+        let valid_renderers = ["halfblock", "block", "braille", "kitty", "sixel"];
         if !valid_renderers.contains(&self.render.renderer.as_str()) {
             return Err(format!(
-                "Invalid renderer '{}'. Must be one of: halfblock, block, braille",
+                "Invalid renderer '{}'. Must be one of: halfblock, block, braille, kitty, sixel",
                 self.render.renderer
             ));
         }
@@ -179,7 +179,7 @@ impl Default for SimulationConfig {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct RenderConfig {
-    /// Renderer backend ("halfblock", "block", or "braille").
+    /// Renderer backend ("halfblock", "block", "braille", "kitty", or "sixel").
     #[serde(alias = "renderer_type")]
     pub renderer: String,
 
@@ -572,8 +572,10 @@ mod tests {
     #[test]
     fn test_braille_and_invalid_renderer_validation() {
         let mut config = Config::default();
-        config.render.renderer = "braille".to_string();
-        assert!(config.validate().is_ok());
+        for valid in ["halfblock", "block", "braille", "kitty", "sixel"] {
+            config.render.renderer = valid.to_string();
+            assert!(config.validate().is_ok(), "{valid} should be valid");
+        }
 
         config.render.renderer = "unsupported_renderer".to_string();
         assert!(config.validate().is_err());

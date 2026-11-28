@@ -36,7 +36,7 @@ threshold = 1.00              # 0.1..=10.0
 thermal_transfer_rate = 0.40  # >0.0..=5.0
 
 [render]
-renderer = "halfblock"        # "halfblock" | "block" | "braille"
+renderer = "halfblock"        # "halfblock" | "block" | "braille" | "kitty" | "sixel"
 fps = 30                      # 1..=240
 gradient = true               # smooth color interpolation
 glow = true                   # ambient edge aura & bottom furnace glow (auto-off on braille/stepped)
@@ -97,7 +97,7 @@ Run `lavaterm --help` for the live flag summary from the installed binary. Note 
 | `-c`, `--config` | `[PATH]` | Without a path, opens the interactive keyboard setup menu to save defaults. With `<PATH>`, loads a custom TOML file. |
 | `--setup` | | Open the interactive keyboard setup menu to edit and save default settings. |
 | `--no-setup` | | Skip the automatic first-run setup wizard. |
-| `-r`, `--renderer` | `<TYPE>` | Renderer backend: `halfblock`, `block`, or `braille`. |
+| `-r`, `--renderer` | `<TYPE>` | Renderer backend: `halfblock`, `block`, `braille`, `kitty`, or `sixel`. |
 | `--fps` | `<FPS>` | Target frames per second (`1..=240`). |
 | `--blobs` | `<COUNT>` | Number of metaball blobs (`1..=128`). |
 | `-t`, `--theme` | `<THEME>` | Preset name, `auto`, `pywal`, `wallust`, or theme file path. |
@@ -117,6 +117,7 @@ Run `lavaterm --help` for the live flag summary from the installed binary. Note 
 | `--no-ripple` | | Disable keyboard ripples on character keypresses. |
 | `--shockwave-force` | `<FORCE>` | Multiplier for mouse click shockwave force (default `1.0`). |
 | `--stir-force` | `<FORCE>` | Multiplier for mouse drag stirring force (default `1.0`). |
+| `--screensaver` | | Run as a fullscreen screensaver that exits cleanly on any keypress or mouse activity (conflicts with `--snapshot`, `--headless`, and `--inline`). |
 | `--headless` | | Run simulation without taking over the TTY (for testing or CI). |
 | `--frames` | `<FRAMES>` | Number of frames to step in headless mode (default `60`). |
 | `-h`, `--help` | | Print help information. |

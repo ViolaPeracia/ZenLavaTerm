@@ -95,6 +95,16 @@ impl Default for ColorPalette {
 }
 
 impl ColorPalette {
+    /// Linearly interpolates all 4 gradient anchors toward `target` by factor `t` in `[0.0, 1.0]`.
+    pub fn lerp(&self, target: &Self, t: f32) -> Self {
+        Self {
+            bottom: Rgb::lerp(self.bottom, target.bottom, t),
+            middle: Rgb::lerp(self.middle, target.middle, t),
+            top: Rgb::lerp(self.top, target.top, t),
+            background: Rgb::lerp(self.background, target.background, t),
+        }
+    }
+
     /// Interpolates the 3-stop thermal ramp (`top -> middle -> bottom`).
     #[inline]
     fn sample_thermal_color(&self, temp: f32) -> Rgb {
@@ -297,6 +307,31 @@ mod tests {
             luma(core) > luma(rim),
             "Inner lava core ({core:?}) must glow brighter than outer rim ({rim:?})"
         );
+    }
+
+    #[test]
+    fn test_palette_lerp_endpoints_and_midpoint() {
+        let a = ColorPalette {
+            bottom: Rgb::new(0, 0, 0),
+            middle: Rgb::new(100, 0, 0),
+            top: Rgb::new(0, 100, 0),
+            background: Rgb::new(0, 0, 100),
+        };
+        let b = ColorPalette {
+            bottom: Rgb::new(200, 100, 50),
+            middle: Rgb::new(200, 100, 0),
+            top: Rgb::new(0, 200, 100),
+            background: Rgb::new(100, 0, 200),
+        };
+        assert_eq!(a.lerp(&b, 0.0), a);
+        assert_eq!(a.lerp(&b, -1.0), a);
+        assert_eq!(a.lerp(&b, 1.0), b);
+        assert_eq!(a.lerp(&b, 2.5), b);
+        let mid = a.lerp(&b, 0.5);
+        assert_eq!(mid.bottom, Rgb::new(100, 50, 25));
+        assert_eq!(mid.middle, Rgb::new(150, 50, 0));
+        assert_eq!(mid.top, Rgb::new(0, 150, 50));
+        assert_eq!(mid.background, Rgb::new(50, 0, 150));
     }
 
     #[test]

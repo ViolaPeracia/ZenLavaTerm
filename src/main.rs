@@ -3,7 +3,10 @@
 use clap::Parser;
 use crossterm::{
     cursor,
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
+        MouseEventKind,
+    },
     execute,
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -14,10 +17,11 @@ use lavaterm::{
     input::{map_key_event_with_ripple, ripple_origin_for_char, Action, MouseTracker},
     reactive::default_system_provider,
     render::{
-        rasterize_simulation, BlockRenderer, BrailleRenderer, ColorPalette, CursorMode,
-        HalfBlockRenderer, RasterizeOptions, Renderer, Rgb, VirtualFramebuffer,
+        framebuffer_dimensions, rasterize_simulation, BlockRenderer, BrailleRenderer, ColorPalette,
+        CursorMode, HalfBlockRenderer, KittyRenderer, RasterizeOptions, Renderer, Rgb,
+        SixelRenderer, VirtualFramebuffer,
     },
-    theme::{load_custom_theme_file, resolve_theme},
+    theme::{list_presets, load_custom_theme_file, resolve_theme},
     widget::{
         render_snapshot_with_options, resolve_policy, should_compact, CompactScaler, ExecutionMode,
         PolicyInput,
@@ -57,7 +61,7 @@ struct Cli {
     #[arg(long)]
     no_setup: bool,
 
-    /// Renderer backend: halfblock | block | braille
+    /// Renderer backend: halfblock | block | braille | kitty | sixel
     #[arg(short, long, value_name = "TYPE")]
     renderer: Option<String>,
 
@@ -137,6 +141,10 @@ struct Cli {
     #[arg(long, value_name = "FORCE")]
     stir_force: Option<f32>,
 
+    /// Run as a fullscreen screensaver that exits cleanly on any keypress or mouse activity
+    #[arg(long)]
+    screensaver: bool,
+
     /// Run headless simulation without taking over TTY (useful for testing/CI)
     #[arg(long)]
     headless: bool,
@@ -155,11 +163,15 @@ struct TerminalGuard {
     cursor_hidden: bool,
     line_wrap_disabled: bool,
     osc_bg_set: bool,
+    kitty_active: bool,
 }
 
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
         let mut out = stdout();
+        if self.kitty_active {
+            let _ = out.write_all(KittyRenderer::clear_sequence());
+        }
         if self.line_wrap_disabled {
             let _ = out.write_all(b"\x1b[?7h");
         }
@@ -248,6 +260,7 @@ struct RuntimeOptions {
     theme_label: String,
     fps: u32,
     raster_opts: RasterizeOptions,
+    glow_requested: bool,
     base_blob_count: usize,
     force_compact: bool,
     adapt_blobs: bool,
@@ -260,7 +273,145 @@ struct RuntimeOptions {
     keyboard_ripple: bool,
     shockwave_force: f32,
     stir_force: f32,
+    screensaver: bool,
     initial_hud_note: Option<String>,
+}
+
+const RENDERER_CYCLE: [&str; 5] = ["halfblock", "block", "braille", "kitty", "sixel"];
+
+fn next_renderer_name(current: &str) -> &'static str {
+    let idx = RENDERER_CYCLE
+        .iter()
+        .position(|&r| r == current)
+        .unwrap_or(0);
+    RENDERER_CYCLE[(idx + 1) % RENDERER_CYCLE.len()]
+}
+
+fn next_theme_name(current: &str) -> &'static str {
+    let presets = list_presets();
+    let cur = current.to_ascii_lowercase();
+    let idx = presets
+        .iter()
+        .position(|&p| p == cur)
+        .map(|i| (i + 1) % presets.len())
+        .unwrap_or(0);
+    presets[idx]
+}
+
+enum ActiveRenderer {
+    HalfBlock(HalfBlockRenderer),
+    Block(BlockRenderer),
+    Braille(BrailleRenderer),
+    Kitty(KittyRenderer),
+    Sixel(SixelRenderer),
+}
+
+impl ActiveRenderer {
+    fn new(kind: &str, cursor_mode: CursorMode, cols: u16, rows: u16) -> Self {
+        match kind {
+            "block" => Self::Block(BlockRenderer::with_cursor_mode(cursor_mode)),
+            "braille" => Self::Braille(BrailleRenderer::with_cursor_mode(cursor_mode)),
+            "kitty" => Self::Kitty(KittyRenderer::with_cursor_mode(cursor_mode, cols, rows)),
+            "sixel" => Self::Sixel(SixelRenderer::with_cursor_mode(cursor_mode)),
+            _ => Self::HalfBlock(HalfBlockRenderer::with_cursor_mode(cursor_mode)),
+        }
+    }
+
+    fn set_viewport(&mut self, cols: u16, rows: u16) {
+        if let Self::Kitty(r) = self {
+            r.set_viewport(cols, rows);
+        }
+    }
+
+    fn is_kitty(&self) -> bool {
+        matches!(self, Self::Kitty(_))
+    }
+
+    fn render(&mut self, fb: &VirtualFramebuffer, writer: &mut dyn Write) -> std::io::Result<()> {
+        match self {
+            Self::HalfBlock(r) => r.render(fb, writer),
+            Self::Block(r) => r.render(fb, writer),
+            Self::Braille(r) => r.render(fb, writer),
+            Self::Kitty(r) => r.render(fb, writer),
+            Self::Sixel(r) => r.render(fb, writer),
+        }
+    }
+}
+
+struct PaletteTransition {
+    from: ColorPalette,
+    to: ColorPalette,
+    started_at: Instant,
+}
+
+impl PaletteTransition {
+    const DURATION_SECS: f32 = 0.45;
+
+    fn start(from: ColorPalette, to: ColorPalette, now: Instant) -> Self {
+        Self {
+            from,
+            to,
+            started_at: now,
+        }
+    }
+
+    /// Returns `(interpolated_palette, finished)`.
+    fn sample(&self, now: Instant) -> (ColorPalette, bool) {
+        let raw_t = (now.duration_since(self.started_at).as_secs_f32() / Self::DURATION_SECS)
+            .clamp(0.0, 1.0);
+        // Smooth ease-out cubic curve
+        let eased = 1.0 - (1.0 - raw_t).powi(3);
+        (self.from.lerp(&self.to, eased), raw_t >= 1.0)
+    }
+}
+
+struct ScreensaverGuard {
+    started_at: Instant,
+    origin_mouse: Option<(u16, u16)>,
+}
+
+impl ScreensaverGuard {
+    const GRACE: Duration = Duration::from_millis(350);
+    const MOVE_THRESHOLD_CELLS: u16 = 3;
+
+    fn new(now: Instant) -> Self {
+        Self {
+            started_at: now,
+            origin_mouse: None,
+        }
+    }
+
+    fn should_exit_on_key(&self, key_kind: KeyEventKind, now: Instant) -> bool {
+        key_kind != KeyEventKind::Release && now.duration_since(self.started_at) >= Self::GRACE
+    }
+
+    fn should_exit_on_mouse(
+        &mut self,
+        kind: MouseEventKind,
+        col: u16,
+        row: u16,
+        now: Instant,
+    ) -> bool {
+        if now.duration_since(self.started_at) < Self::GRACE {
+            return false;
+        }
+        match kind {
+            MouseEventKind::Down(_)
+            | MouseEventKind::Drag(_)
+            | MouseEventKind::ScrollUp
+            | MouseEventKind::ScrollDown => true,
+            MouseEventKind::Moved => match self.origin_mouse {
+                None => {
+                    self.origin_mouse = Some((col, row));
+                    false
+                }
+                Some((ox, oy)) => {
+                    col.abs_diff(ox).saturating_add(row.abs_diff(oy)) >= Self::MOVE_THRESHOLD_CELLS
+                }
+            },
+            _ => false,
+        }
+    }
 }
 
 struct HudState {
@@ -314,14 +465,12 @@ fn sample_under_cell(
     fb: &VirtualFramebuffer,
     cell_col: usize,
     cell_row: usize,
-    renderer_type: &str,
+    cols: u16,
+    rows: u16,
     fallback: Rgb,
 ) -> Rgb {
-    let (px, py) = match renderer_type {
-        "block" => (cell_col, cell_row),
-        "braille" => (cell_col * 2, cell_row * 4),
-        _ => (cell_col, cell_row * 2),
-    };
+    let px = (cell_col * fb.width) / (cols as usize).max(1);
+    let py = (cell_row * fb.height) / (rows as usize).max(1);
     fb.get_pixel(px, py).unwrap_or(fallback)
 }
 
@@ -412,13 +561,8 @@ fn render_status_overlay(
                 }
                 for (c_off, &ch) in chars.iter().enumerate() {
                     let cell_col = (start_col - 1) + c_off;
-                    let under = sample_under_cell(
-                        fb,
-                        cell_col,
-                        r_idx,
-                        &opts.renderer_type,
-                        palette.background,
-                    );
+                    let under =
+                        sample_under_cell(fb, cell_col, r_idx, cols, rows, palette.background);
                     let is_border = matches!(ch, '╭' | '╮' | '╰' | '╯' | '─' | '│');
                     let fg_target = if is_border {
                         border_target
@@ -553,14 +697,6 @@ fn run_headless(
     Ok(())
 }
 
-fn framebuffer_dimensions(cols: u16, rows: u16, renderer_type: &str) -> (usize, usize) {
-    match renderer_type {
-        "block" => (cols as usize, rows as usize),
-        "braille" => (cols as usize * 2, rows as usize * 4),
-        _ => (cols as usize, (rows as usize) * 2),
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum InteractiveMode {
     Fullscreen,
@@ -569,13 +705,14 @@ enum InteractiveMode {
 
 fn run_event_loop(
     mut sim: Simulation,
-    palette: ColorPalette,
+    mut palette: ColorPalette,
     mut opts: RuntimeOptions,
     fixed_dim: Option<(u16, u16)>,
     mode: InteractiveMode,
 ) -> Result<()> {
     let is_fullscreen = matches!(mode, InteractiveMode::Fullscreen);
-    setup_panic_hook(is_fullscreen, opts.mouse_enabled);
+    let enable_mouse = opts.mouse_enabled || opts.screensaver;
+    setup_panic_hook(is_fullscreen, enable_mouse);
 
     let shutdown_flag = Arc::new(AtomicBool::new(false));
     setup_signal_handler(Arc::clone(&shutdown_flag));
@@ -606,12 +743,14 @@ fn run_event_loop(
         cursor_hidden: false,
         line_wrap_disabled: false,
         osc_bg_set: false,
+        kitty_active: false,
     };
 
     terminal::enable_raw_mode()?;
     guard.raw_mode = true;
 
     let mut out = BufWriter::with_capacity(256 * 1024, stdout());
+    let mut last_osc_bg = palette.background;
 
     if is_fullscreen {
         execute!(out, EnterAlternateScreen, cursor::Hide)?;
@@ -632,7 +771,7 @@ fn run_event_loop(
         guard.cursor_hidden = true;
     }
 
-    if opts.mouse_enabled && execute!(out, EnableMouseCapture).is_ok() {
+    if enable_mouse && execute!(out, EnableMouseCapture).is_ok() {
         guard.mouse_enabled = true;
     }
 
@@ -659,17 +798,18 @@ fn run_event_loop(
         CursorMode::Absolute
     };
 
-    let mut renderer: Box<dyn Renderer> = match opts.renderer_type.as_str() {
-        "block" => Box::new(BlockRenderer::with_cursor_mode(cursor_mode)),
-        "braille" => Box::new(BrailleRenderer::with_cursor_mode(cursor_mode)),
-        _ => Box::new(HalfBlockRenderer::with_cursor_mode(cursor_mode)),
-    };
+    let mut renderer = ActiveRenderer::new(&opts.renderer_type, cursor_mode, cols, rows);
+    guard.kitty_active = renderer.is_kitty();
 
     let mut mouse_tracker = MouseTracker::new();
     let target_frame_duration = Duration::from_secs_f32(1.0 / opts.fps as f32);
     let mut last_instant = Instant::now();
     let mut paused = false;
     let mut hud = HudState::new(opts.initial_hud_note.take());
+    let mut palette_transition: Option<PaletteTransition> = None;
+    let mut screensaver_guard = opts
+        .screensaver
+        .then(|| ScreensaverGuard::new(Instant::now()));
 
     let loop_result = (|| -> Result<()> {
         loop {
@@ -683,43 +823,133 @@ fn run_event_loop(
 
             while event::poll(Duration::from_millis(0))? {
                 match event::read()? {
-                    Event::Key(key) => match map_key_event_with_ripple(key, opts.keyboard_ripple) {
-                        Action::Quit => return Ok(()),
-                        Action::TogglePause => {
-                            paused = !paused;
-                            hud.trigger(if paused {
-                                "Paused (Ctrl+p resume)"
-                            } else {
-                                "Resumed"
-                            });
-                        }
-                        Action::ToggleHud => {
-                            hud.trigger("Ctrl+p pause · Ctrl+r reset · +/- speed · Esc quit");
-                        }
-                        Action::SpeedUp => {
-                            sim.nudge_speed(0.25);
-                            hud.trigger(format!("Speed {:.2}x", sim.speed_scale()));
-                        }
-                        Action::SlowDown => {
-                            sim.nudge_speed(-0.25);
-                            hud.trigger(format!("Speed {:.2}x", sim.speed_scale()));
-                        }
-                        Action::Reset => {
-                            sim.reset(DEFAULT_SEED);
-                            mouse_tracker.reset();
-                            hud.trigger("Reset");
-                        }
-                        Action::Ripple(intensity) => {
-                            if let KeyCode::Char(ch) = key.code {
-                                let (x, y) = ripple_origin_for_char(ch);
-                                sim.apply_interaction(&Interaction::RippleAt { x, y, intensity });
-                            } else {
-                                sim.apply_interaction(&Interaction::Ripple { intensity });
+                    Event::Key(key) => {
+                        if let Some(ref ss) = screensaver_guard {
+                            let is_hard_quit = matches!(key.code, KeyCode::Esc)
+                                || (key.modifiers.contains(KeyModifiers::CONTROL)
+                                    && matches!(
+                                        key.code,
+                                        KeyCode::Char('c')
+                                            | KeyCode::Char('C')
+                                            | KeyCode::Char('q')
+                                            | KeyCode::Char('Q')
+                                    ));
+                            if is_hard_quit || ss.should_exit_on_key(key.kind, now) {
+                                return Ok(());
                             }
+                            continue;
                         }
-                        Action::None => {}
-                    },
-                    Event::Mouse(mouse_event) if opts.mouse_enabled => {
+                        match map_key_event_with_ripple(key, opts.keyboard_ripple) {
+                            Action::Quit => return Ok(()),
+                            Action::TogglePause => {
+                                paused = !paused;
+                                hud.trigger(if paused {
+                                    "Paused (Ctrl+p resume)"
+                                } else {
+                                    "Resumed"
+                                });
+                            }
+                            Action::ToggleHud => {
+                                hud.trigger(
+                                    "Ctrl+t theme · Ctrl+o renderer · Ctrl+g glow · Ctrl+p/r · +/- · Esc",
+                                );
+                            }
+                            Action::SpeedUp => {
+                                sim.nudge_speed(0.25);
+                                hud.trigger(format!("Speed {:.2}x", sim.speed_scale()));
+                            }
+                            Action::SlowDown => {
+                                sim.nudge_speed(-0.25);
+                                hud.trigger(format!("Speed {:.2}x", sim.speed_scale()));
+                            }
+                            Action::Reset => {
+                                sim.reset(DEFAULT_SEED);
+                                mouse_tracker.reset();
+                                hud.trigger("Reset");
+                            }
+                            Action::CycleTheme => {
+                                let next_name = next_theme_name(&opts.theme_label);
+                                if let Ok(target_palette) = resolve_theme(next_name) {
+                                    palette_transition = Some(PaletteTransition::start(
+                                        palette.clone(),
+                                        target_palette,
+                                        now,
+                                    ));
+                                    opts.theme_label = next_name.to_string();
+                                    hud.trigger(format!("Theme: {next_name}"));
+                                }
+                            }
+                            Action::CycleRenderer => {
+                                if renderer.is_kitty() {
+                                    let _ = out.write_all(KittyRenderer::clear_sequence());
+                                }
+                                let next_name = next_renderer_name(&opts.renderer_type);
+                                opts.renderer_type = next_name.to_string();
+                                renderer = ActiveRenderer::new(next_name, cursor_mode, cols, rows);
+                                guard.kitty_active = renderer.is_kitty();
+                                let (new_w, new_h) = framebuffer_dimensions(cols, rows, next_name);
+                                fb.resize(new_w, new_h, palette.background);
+                                opts.raster_opts = RasterizeOptions::for_renderer(
+                                    next_name,
+                                    opts.raster_opts.threshold,
+                                    opts.raster_opts.gradient,
+                                    opts.glow_requested,
+                                    opts.raster_opts.molten_pool,
+                                )
+                                .with_aspect_ratio(RasterizeOptions::physical_aspect_ratio(
+                                    cols, rows,
+                                ));
+                                hud.trigger(format!("Renderer: {next_name}"));
+                            }
+                            Action::ToggleGlow => {
+                                opts.glow_requested = !opts.glow_requested;
+                                opts.raster_opts = RasterizeOptions::for_renderer(
+                                    &opts.renderer_type,
+                                    opts.raster_opts.threshold,
+                                    opts.raster_opts.gradient,
+                                    opts.glow_requested,
+                                    opts.raster_opts.molten_pool,
+                                )
+                                .with_aspect_ratio(RasterizeOptions::physical_aspect_ratio(
+                                    cols, rows,
+                                ));
+                                if opts.renderer_type == "braille" && opts.glow_requested {
+                                    hud.trigger("Glow queued (off on 1-bit braille)");
+                                } else {
+                                    hud.trigger(if opts.glow_requested {
+                                        "Glow: on"
+                                    } else {
+                                        "Glow: off"
+                                    });
+                                }
+                            }
+                            Action::Ripple(intensity) => {
+                                if let KeyCode::Char(ch) = key.code {
+                                    let (x, y) = ripple_origin_for_char(ch);
+                                    sim.apply_interaction(&Interaction::RippleAt {
+                                        x,
+                                        y,
+                                        intensity,
+                                    });
+                                } else {
+                                    sim.apply_interaction(&Interaction::Ripple { intensity });
+                                }
+                            }
+                            Action::None => {}
+                        }
+                    }
+                    Event::Mouse(mouse_event) if enable_mouse => {
+                        if let Some(ref mut ss) = screensaver_guard {
+                            if ss.should_exit_on_mouse(
+                                mouse_event.kind,
+                                mouse_event.column,
+                                mouse_event.row,
+                                now,
+                            ) {
+                                return Ok(());
+                            }
+                            continue;
+                        }
                         if let Some(interaction) = mouse_tracker.handle_event(
                             mouse_event,
                             cols,
@@ -738,6 +968,7 @@ fn run_event_loop(
                                 target_height.min(new_rows)
                             }
                         };
+                        renderer.set_viewport(cols, rows);
                         let (new_w, new_h) =
                             framebuffer_dimensions(cols, rows, &opts.renderer_type);
                         fb.resize(new_w, new_h, palette.background);
@@ -748,6 +979,22 @@ fn run_event_loop(
                         mouse_tracker.reset();
                     }
                     _ => {}
+                }
+            }
+
+            if let Some(ref transition) = palette_transition {
+                let (blended, done) = transition.sample(now);
+                palette = blended;
+                if is_fullscreen && palette.background != last_osc_bg {
+                    let _ = write!(
+                        out,
+                        "\x1b]11;#{:02x}{:02x}{:02x}\x07",
+                        palette.background.r, palette.background.g, palette.background.b
+                    );
+                    last_osc_bg = palette.background;
+                }
+                if done {
+                    palette_transition = None;
                 }
             }
 
@@ -833,6 +1080,12 @@ fn main() -> std::process::ExitCode {
         );
         return std::process::ExitCode::FAILURE;
     }
+    if cli.screensaver && (cli.snapshot || cli.headless || cli.inline) {
+        eprintln!(
+            "Configuration/Policy error: Conflict: --screensaver cannot be combined with --snapshot, --headless, or --inline"
+        );
+        return std::process::ExitCode::FAILURE;
+    }
 
     if cli.list_audio_devices {
         let devices = list_audio_devices();
@@ -879,6 +1132,7 @@ fn main() -> std::process::ExitCode {
         || cli.width.is_some()
         || cli.height.is_some()
         || cli.system
+        || cli.screensaver
         || cli_audio_requested;
 
     let should_open_wizard = interactive_config_requested
@@ -1056,6 +1310,7 @@ fn main() -> std::process::ExitCode {
         theme_label,
         fps: policy.target_fps,
         raster_opts,
+        glow_requested: config.render.glow,
         base_blob_count,
         force_compact: policy.force_compact,
         adapt_blobs: policy.adapt_blobs,
@@ -1068,6 +1323,7 @@ fn main() -> std::process::ExitCode {
         keyboard_ripple,
         shockwave_force,
         stir_force,
+        screensaver: cli.screensaver,
         initial_hud_note,
     };
 
@@ -1138,6 +1394,7 @@ mod tests {
             theme_label: "lava".to_string(),
             fps: 30,
             raster_opts: RasterizeOptions::default(),
+            glow_requested: true,
             base_blob_count: 12,
             force_compact: false,
             adapt_blobs: true,
@@ -1150,6 +1407,7 @@ mod tests {
             keyboard_ripple: true,
             shockwave_force: 1.0,
             stir_force: 1.0,
+            screensaver: false,
             initial_hud_note: None,
         };
         let mut buf = Vec::new();
@@ -1182,5 +1440,65 @@ mod tests {
             "Inline HUD must render rounded border card"
         );
         assert!(rendered.contains("synthetic fallback"));
+    }
+
+    #[test]
+    fn test_live_renderer_and_theme_cycles() {
+        assert_eq!(next_renderer_name("halfblock"), "block");
+        assert_eq!(next_renderer_name("block"), "braille");
+        assert_eq!(next_renderer_name("braille"), "kitty");
+        assert_eq!(next_renderer_name("kitty"), "sixel");
+        assert_eq!(next_renderer_name("sixel"), "halfblock");
+
+        assert_eq!(next_theme_name("lava"), "ocean");
+        assert_eq!(next_theme_name("unknown_custom"), "lava");
+    }
+
+    #[test]
+    fn test_palette_transition_completes_smoothly() {
+        let t0 = Instant::now();
+        let a = resolve_theme("lava").expect("lava");
+        let b = resolve_theme("ocean").expect("ocean");
+        let tr = PaletteTransition::start(a.clone(), b.clone(), t0);
+
+        let (start_pal, done0) = tr.sample(t0);
+        assert_eq!(start_pal, a);
+        assert!(!done0);
+
+        let (mid_pal, done_mid) = tr.sample(t0 + Duration::from_millis(200));
+        assert_ne!(mid_pal, a);
+        assert_ne!(mid_pal, b);
+        assert!(!done_mid);
+
+        let (end_pal, done_end) = tr.sample(t0 + Duration::from_millis(500));
+        assert_eq!(end_pal, b);
+        assert!(done_end);
+    }
+
+    #[test]
+    fn test_screensaver_guard_grace_and_triggers() {
+        let t0 = Instant::now();
+        let mut guard = ScreensaverGuard::new(t0);
+
+        // During 350ms grace window, input does not exit
+        let early = t0 + Duration::from_millis(100);
+        assert!(!guard.should_exit_on_key(KeyEventKind::Press, early));
+        assert!(!guard.should_exit_on_mouse(MouseEventKind::Moved, 10, 10, early));
+
+        // After grace window, key release is ignored but key press exits
+        let after = t0 + Duration::from_millis(400);
+        assert!(!guard.should_exit_on_key(KeyEventKind::Release, after));
+        assert!(guard.should_exit_on_key(KeyEventKind::Press, after));
+
+        // First post-grace mouse move records origin; small jitter ignored; >=3 cells exits
+        assert!(!guard.should_exit_on_mouse(MouseEventKind::Moved, 20, 10, after));
+        assert!(!guard.should_exit_on_mouse(MouseEventKind::Moved, 21, 11, after));
+        assert!(guard.should_exit_on_mouse(MouseEventKind::Moved, 23, 10, after));
+        assert!(guard.should_exit_on_mouse(
+            MouseEventKind::Down(crossterm::event::MouseButton::Left),
+            20,
+            10,
+            after
+        ));
     }
 }

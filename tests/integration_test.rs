@@ -1274,3 +1274,62 @@ fn test_v200_save_config_roundtrip_and_i32_f64_pcm() {
     let sig_f64 = analyzer.analyze(&buf);
     assert!(sig_f64.bass > 0.2, "F64 PCM must register bass energy");
 }
+
+#[test]
+fn test_v210_kitty_sixel_cli_snapshots_and_screensaver_conflicts() {
+    use std::process::Command;
+
+    let bin = env!("CARGO_BIN_EXE_lavaterm");
+
+    let kitty_out = Command::new(bin)
+        .args([
+            "--snapshot",
+            "--renderer",
+            "kitty",
+            "--width",
+            "20",
+            "--height",
+            "8",
+        ])
+        .output()
+        .expect("run kitty snapshot");
+    assert!(
+        kitty_out.status.success(),
+        "kitty snapshot failed: {}",
+        String::from_utf8_lossy(&kitty_out.stderr)
+    );
+    let kitty_str = String::from_utf8_lossy(&kitty_out.stdout);
+    assert!(kitty_str.starts_with("\x1b_Ga=T,f=24,t=d,i=1,p=1,"));
+    assert!(kitty_str.contains("z=-1"));
+
+    let sixel_out = Command::new(bin)
+        .args([
+            "--snapshot",
+            "--renderer",
+            "sixel",
+            "--width",
+            "20",
+            "--height",
+            "8",
+        ])
+        .output()
+        .expect("run sixel snapshot");
+    assert!(
+        sixel_out.status.success(),
+        "sixel snapshot failed: {}",
+        String::from_utf8_lossy(&sixel_out.stderr)
+    );
+    let sixel_str = String::from_utf8_lossy(&sixel_out.stdout);
+    assert!(sixel_str.starts_with("\x1bP0;0;0q\"1;1;60;48"));
+    assert!(sixel_str.trim_end().ends_with("\x1b\\"));
+
+    let conflict_out = Command::new(bin)
+        .args(["--screensaver", "--headless", "--frames", "1"])
+        .output()
+        .expect("run screensaver conflict");
+    assert!(!conflict_out.status.success());
+    assert!(
+        String::from_utf8_lossy(&conflict_out.stderr).contains("--screensaver"),
+        "expected screensaver conflict message"
+    );
+}

@@ -1,6 +1,6 @@
 # Maintainer: ZenLavaTerm Contributors <https://github.com/ViolaPeracia/ZenLavaTerm>
 pkgname=lavaterm
-pkgver=2.0.0
+pkgver=2.1.0
 pkgrel=1
 pkgdesc="A terminal-native ambient lava lamp and metaball visualizer"
 arch=('x86_64' 'aarch64')
