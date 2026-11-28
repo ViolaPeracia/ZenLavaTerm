@@ -20,7 +20,7 @@ impl Rgb {
     /// Parses an RGB color from a hex string (e.g. `"#ff3b00"` or `"ff3b00"`).
     pub fn from_hex(hex: &str) -> Result<Self, ParseColorError> {
         let clean_hex = hex.trim().trim_start_matches('#');
-        if clean_hex.len() != 6 {
+        if clean_hex.len() != 6 || !clean_hex.is_ascii() {
             return Err(ParseColorError(hex.to_string()));
         }
 
@@ -150,6 +150,12 @@ mod tests {
 
         assert!(Rgb::from_hex("invalid").is_err());
         assert!(Rgb::from_hex("#123").is_err());
+    }
+
+    #[test]
+    fn test_from_hex_rejects_multibyte_utf8_without_panic() {
+        assert!(Rgb::from_hex("#ééé").is_err());
+        assert!(Rgb::from_hex("#🔥🔥").is_err());
     }
 
     #[test]

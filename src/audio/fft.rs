@@ -35,7 +35,7 @@ impl SpectrumAnalyzer {
     /// Computes Hann window coefficients.
     pub fn apply_hann_window(samples: &mut [f32]) {
         let n = samples.len();
-        if n == 0 {
+        if n <= 1 {
             return;
         }
         for (i, sample) in samples.iter_mut().enumerate() {
@@ -320,5 +320,12 @@ mod tests {
         for &im in &imag {
             assert!(im.abs() < 1e-5);
         }
+    }
+
+    #[test]
+    fn test_apply_hann_window_single_sample_no_nan() {
+        let mut s = [0.75f32];
+        SpectrumAnalyzer::apply_hann_window(&mut s);
+        assert!(s[0].is_finite() && (s[0] - 0.75).abs() < 1e-6);
     }
 }

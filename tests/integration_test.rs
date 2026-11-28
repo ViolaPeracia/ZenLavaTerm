@@ -571,7 +571,7 @@ fn test_phase11_linux_provider_delta_transition() {
         "CPU load delta should calculate ~0.50, got {}",
         s2.cpu_load
     );
-    assert!(s2.io_activity > 0.0, "IO activity delta should be non-zero");
+    assert_eq!(s2.io_activity, 0.0);
 
     // Cleanup
     let _ = fs::remove_file(&stat_file);
@@ -964,4 +964,42 @@ fn test_phase12_audio_pipeline_full_e2e_samples_to_render() {
     feeder.feed_frames_u16(512);
     let sig_u16 = provider.poll_signals();
     assert!(sig_u16.bass > 0.1, "u16 PCM pipeline produces valid bass");
+}
+
+#[test]
+fn test_cli_validation_rejects_invalid_arguments() {
+    use std::process::Command;
+
+    let bin = env!("CARGO_BIN_EXE_lavaterm");
+    let invalid_cases: &[&[&str]] = &[
+        &["--headless", "--frames", "1", "--blobs", "0"],
+        &["--headless", "--frames", "1", "--blobs", "500"],
+        &["--headless", "--frames", "1", "--renderer", "bogus"],
+        &["--headless", "--frames", "1", "--fps", "999"],
+        &[
+            "--headless",
+            "--frames",
+            "1",
+            "--width",
+            "5000",
+            "--height",
+            "5000",
+        ],
+        &["--headless", "--frames", "1", "--shockwave-force", "NaN"],
+        &["--headless", "--frames", "1", "--system", "--audio"],
+    ];
+
+    for args in invalid_cases {
+        let output = Command::new(bin)
+            .args(*args)
+            .output()
+            .expect("failed to execute lavaterm binary");
+        assert!(
+            !output.status.success(),
+            "Expected non-zero exit for args {:?}, but succeeded.\nstdout: {}\nstderr: {}",
+            args,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 }

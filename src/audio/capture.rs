@@ -19,6 +19,8 @@ pub struct LiveAudioProvider {
     sample_buf: Vec<f32>,
     stream_alive: Arc<AtomicBool>,
     fallback_generator: SyntheticAudioGenerator,
+    last_samples_written: usize,
+    last_sample_time: Option<std::time::Instant>,
     _backend: Option<Box<dyn Any + Send + Sync>>,
 }
 
@@ -52,6 +54,8 @@ impl LiveAudioProvider {
             sample_buf: Vec::with_capacity(size),
             stream_alive: Arc::new(AtomicBool::new(true)),
             fallback_generator: SyntheticAudioGenerator::new(120.0),
+            last_samples_written: 0,
+            last_sample_time: None,
             _backend: backend,
         }
     }
@@ -114,6 +118,22 @@ impl AudioProvider for LiveAudioProvider {
         // Automatic runtime recovery: if stream disconnected or faulted, fallback to synthetic beat generator
         if !self.stream_alive.load(Ordering::Relaxed) {
             return self.fallback_generator.poll_signals();
+        }
+
+        // WASAPI loopback stops delivering callbacks when playback stops, leaving the
+        // last loud window frozen in the ring buffer. Return silence once idle.
+        let written = self.ring_buffer.total_samples_written();
+        if written == 0 {
+            return AudioSignals::default();
+        }
+        let now = std::time::Instant::now();
+        if written != self.last_samples_written {
+            self.last_samples_written = written;
+            self.last_sample_time = Some(now);
+        } else if let Some(last_time) = self.last_sample_time {
+            if now.duration_since(last_time) >= std::time::Duration::from_millis(120) {
+                return AudioSignals::default();
+            }
         }
 
         let is_coherent = self
@@ -257,6 +277,33 @@ mod tests {
         assert!(
             recovered_sig.bass > 0.0,
             "Recovered live stream must analyze new PCM samples"
+        );
+    }
+
+    #[test]
+    fn test_live_audio_provider_returns_silence_when_stream_idle() {
+        let ring = PcmRingBuffer::new(1024);
+        let analyzer = SpectrumAnalyzer::new(44100, 256);
+        let mut provider = LiveAudioProvider::new(ring.clone(), analyzer);
+
+        let mut pulse = vec![0.0f32; 256];
+        for (i, s) in pulse.iter_mut().enumerate() {
+            *s = (2.0 * std::f32::consts::PI * 100.0 * i as f32 / 44100.0).sin();
+        }
+        ring.push_slice(&pulse);
+
+        let active_sig = provider.poll_signals();
+        assert!(
+            active_sig.bass > 0.0,
+            "Freshly pushed audio must produce active bass"
+        );
+
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        let idle_sig = provider.poll_signals();
+        assert_eq!(
+            idle_sig,
+            AudioSignals::default(),
+            "Stale ring buffer with no new samples must decay to silence"
         );
     }
 }

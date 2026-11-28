@@ -75,34 +75,37 @@ pub fn parse_pywal_json(json_str: &str) -> Result<ColorPalette, String> {
 
 /// Parses pywal flat `colors` plain-text file (16 lines of `#rrggbb`).
 pub fn parse_pywal_flat(text: &str) -> Result<ColorPalette, String> {
-    let lines: Vec<&str> = text
-        .lines()
-        .map(|l| l.trim())
-        .filter(|l| !l.is_empty() && !l.starts_with('#') || l.len() >= 6)
-        .collect();
+    let mut colors = Vec::new();
+    for (idx, raw_line) in text.lines().enumerate() {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let rgb = Rgb::from_hex(line).map_err(|e| {
+            format!(
+                "Invalid hex color on line {} of pywal flat file: {e}",
+                idx + 1
+            )
+        })?;
+        colors.push(rgb);
+    }
 
-    if lines.is_empty() {
+    if colors.is_empty() {
         return Err("Pywal flat file is empty".to_string());
     }
 
     let default_pal = ColorPalette::default();
-    let bg = lines
-        .first()
-        .and_then(|h| Rgb::from_hex(h).ok())
-        .unwrap_or(default_pal.background);
-    let bottom = lines
-        .get(1)
-        .and_then(|h| Rgb::from_hex(h).ok())
-        .unwrap_or(default_pal.bottom);
-    let middle = lines
+    let bg = colors.first().copied().unwrap_or(default_pal.background);
+    let bottom = colors.get(1).copied().unwrap_or(default_pal.bottom);
+    let middle = colors
         .get(3)
-        .or_else(|| lines.get(2))
-        .and_then(|h| Rgb::from_hex(h).ok())
+        .or_else(|| colors.get(2))
+        .copied()
         .unwrap_or(default_pal.middle);
-    let top = lines
+    let top = colors
         .get(4)
-        .or_else(|| lines.get(5))
-        .and_then(|h| Rgb::from_hex(h).ok())
+        .or_else(|| colors.get(5))
+        .copied()
         .unwrap_or(default_pal.top);
 
     Ok(ColorPalette {

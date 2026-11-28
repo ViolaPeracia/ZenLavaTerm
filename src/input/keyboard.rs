@@ -1,6 +1,6 @@
 //! Keyboard event mapping and domain actions.
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 /// High-level domain action triggered by user input.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -23,6 +23,10 @@ pub enum Action {
 
 /// Translates a crossterm `KeyEvent` into a domain `Action` with optional keyboard ripple.
 pub fn map_key_event_with_ripple(key: KeyEvent, enable_ripple: bool) -> Action {
+    if key.kind == KeyEventKind::Release {
+        return Action::None;
+    }
+
     // 1. Control modifier checks
     if key.modifiers.contains(KeyModifiers::CONTROL) {
         return match key.code {
@@ -112,5 +116,18 @@ mod tests {
 
         let alt_1 = KeyEvent::new(KeyCode::Char('1'), KeyModifiers::ALT);
         assert_eq!(map_key_event(alt_1), Action::None);
+    }
+
+    #[test]
+    fn test_key_release_events_are_ignored() {
+        use crossterm::event::KeyEventKind;
+
+        let mut q_release = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);
+        q_release.kind = KeyEventKind::Release;
+        assert_eq!(map_key_event(q_release), Action::None);
+
+        let mut a_release = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE);
+        a_release.kind = KeyEventKind::Release;
+        assert_eq!(map_key_event(a_release), Action::None);
     }
 }

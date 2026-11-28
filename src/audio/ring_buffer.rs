@@ -90,7 +90,8 @@ impl PcmRingBuffer {
     /// Thread-safe and coherent across concurrent producers and readers.
     pub fn clear(&self) {
         self.acquire_producer();
-        let v_start = self.inner.version.fetch_add(1, Ordering::Acquire);
+        let v_start = self.inner.version.fetch_add(1, Ordering::Relaxed);
+        std::sync::atomic::fence(Ordering::Release);
 
         for slot in self.inner.data.iter() {
             slot.store(0.0f32.to_bits(), Ordering::Relaxed);
@@ -111,7 +112,8 @@ impl PcmRingBuffer {
         }
 
         self.acquire_producer();
-        let v_start = self.inner.version.fetch_add(1, Ordering::Acquire);
+        let v_start = self.inner.version.fetch_add(1, Ordering::Relaxed);
+        std::sync::atomic::fence(Ordering::Release);
         let cap = self.inner.capacity;
         let mut pos = self.inner.write_pos.load(Ordering::Relaxed);
 
@@ -131,6 +133,53 @@ impl PcmRingBuffer {
         self.release_producer();
     }
 
+    fn push_interleaved_mapped<T: Copy>(
+        &self,
+        interleaved_samples: &[T],
+        channels: usize,
+        clamp: bool,
+        to_f32: impl Fn(T) -> f32,
+    ) {
+        if interleaved_samples.is_empty() || channels == 0 {
+            return;
+        }
+
+        let num_frames = interleaved_samples.len() / channels;
+        if num_frames == 0 {
+            return;
+        }
+
+        self.acquire_producer();
+        let v_start = self.inner.version.fetch_add(1, Ordering::Relaxed);
+        std::sync::atomic::fence(Ordering::Release);
+        let inv_channels = 1.0 / (channels as f32);
+        let cap = self.inner.capacity;
+        let mut pos = self.inner.write_pos.load(Ordering::Relaxed);
+
+        for frame_idx in 0..num_frames {
+            let start = frame_idx * channels;
+            let mut sum = 0.0f32;
+            for c in 0..channels {
+                sum += to_f32(interleaved_samples[start + c]);
+            }
+            let avg = sum * inv_channels;
+            let mono_sample = if clamp { avg.clamp(-1.0, 1.0) } else { avg };
+
+            self.inner.data[pos].store(mono_sample.to_bits(), Ordering::Relaxed);
+            pos = if pos + 1 >= cap { 0 } else { pos + 1 };
+        }
+
+        self.inner.write_pos.store(pos, Ordering::Release);
+        self.inner
+            .total_written
+            .fetch_add(num_frames, Ordering::Release);
+
+        self.inner
+            .version
+            .store(v_start.wrapping_add(2), Ordering::Release);
+        self.release_producer();
+    }
+
     /// Pushes interleaved multi-channel f32 samples by downmixing to mono.
     pub fn push_interleaved_f32(&self, interleaved_samples: &[f32], channels: usize) {
         if interleaved_samples.is_empty() || channels == 0 {
@@ -142,121 +191,23 @@ impl PcmRingBuffer {
             return;
         }
 
-        let num_frames = interleaved_samples.len() / channels;
-        if num_frames == 0 {
-            return;
-        }
-
-        self.acquire_producer();
-        let v_start = self.inner.version.fetch_add(1, Ordering::Acquire);
-        let inv_channels = 1.0 / (channels as f32);
-        let cap = self.inner.capacity;
-        let mut pos = self.inner.write_pos.load(Ordering::Relaxed);
-
-        for frame_idx in 0..num_frames {
-            let start = frame_idx * channels;
-            let mut sum = 0.0f32;
-            for c in 0..channels {
-                sum += interleaved_samples[start + c];
-            }
-            let mono_sample = sum * inv_channels;
-
-            self.inner.data[pos].store(mono_sample.to_bits(), Ordering::Relaxed);
-            pos = if pos + 1 >= cap { 0 } else { pos + 1 };
-        }
-
-        self.inner.write_pos.store(pos, Ordering::Release);
-        self.inner
-            .total_written
-            .fetch_add(num_frames, Ordering::Release);
-
-        self.inner
-            .version
-            .store(v_start.wrapping_add(2), Ordering::Release);
-        self.release_producer();
+        self.push_interleaved_mapped(interleaved_samples, channels, false, |s| s);
     }
 
     /// Pushes interleaved 16-bit unsigned integer PCM samples, normalizing to [-1.0, 1.0] and downmixing to mono.
     pub fn push_interleaved_u16(&self, interleaved_samples: &[u16], channels: usize) {
-        if interleaved_samples.is_empty() || channels == 0 {
-            return;
-        }
-
-        let num_frames = interleaved_samples.len() / channels;
-        if num_frames == 0 {
-            return;
-        }
-
-        self.acquire_producer();
-        let v_start = self.inner.version.fetch_add(1, Ordering::Acquire);
         let inv_scale = 1.0 / 32768.0f32;
-        let inv_channels = 1.0 / (channels as f32);
-        let cap = self.inner.capacity;
-        let mut pos = self.inner.write_pos.load(Ordering::Relaxed);
-
-        for frame_idx in 0..num_frames {
-            let start = frame_idx * channels;
-            let mut sum = 0.0f32;
-            for c in 0..channels {
-                let s = (interleaved_samples[start + c] as f32 - 32768.0) * inv_scale;
-                sum += s;
-            }
-            let mono_sample = (sum * inv_channels).clamp(-1.0, 1.0);
-
-            self.inner.data[pos].store(mono_sample.to_bits(), Ordering::Relaxed);
-            pos = if pos + 1 >= cap { 0 } else { pos + 1 };
-        }
-
-        self.inner.write_pos.store(pos, Ordering::Release);
-        self.inner
-            .total_written
-            .fetch_add(num_frames, Ordering::Release);
-
-        self.inner
-            .version
-            .store(v_start.wrapping_add(2), Ordering::Release);
-        self.release_producer();
+        self.push_interleaved_mapped(interleaved_samples, channels, true, |s| {
+            (s as f32 - 32768.0) * inv_scale
+        });
     }
 
     /// Pushes interleaved 16-bit signed integer PCM samples, normalizing to [-1.0, 1.0] and downmixing to mono.
     pub fn push_interleaved_i16(&self, interleaved_samples: &[i16], channels: usize) {
-        if interleaved_samples.is_empty() || channels == 0 {
-            return;
-        }
-
-        let num_frames = interleaved_samples.len() / channels;
-        if num_frames == 0 {
-            return;
-        }
-
-        self.acquire_producer();
-        let v_start = self.inner.version.fetch_add(1, Ordering::Acquire);
         let inv_scale = 1.0 / 32768.0f32;
-        let inv_channels = 1.0 / (channels as f32);
-        let cap = self.inner.capacity;
-        let mut pos = self.inner.write_pos.load(Ordering::Relaxed);
-
-        for frame_idx in 0..num_frames {
-            let start = frame_idx * channels;
-            let mut sum = 0.0f32;
-            for c in 0..channels {
-                sum += interleaved_samples[start + c] as f32 * inv_scale;
-            }
-            let mono_sample = (sum * inv_channels).clamp(-1.0, 1.0);
-
-            self.inner.data[pos].store(mono_sample.to_bits(), Ordering::Relaxed);
-            pos = if pos + 1 >= cap { 0 } else { pos + 1 };
-        }
-
-        self.inner.write_pos.store(pos, Ordering::Release);
-        self.inner
-            .total_written
-            .fetch_add(num_frames, Ordering::Release);
-
-        self.inner
-            .version
-            .store(v_start.wrapping_add(2), Ordering::Release);
-        self.release_producer();
+        self.push_interleaved_mapped(interleaved_samples, channels, true, |s| {
+            s as f32 * inv_scale
+        });
     }
 
     /// Reads the most recent `count` samples in chronological order without locking.
@@ -290,7 +241,8 @@ impl PcmRingBuffer {
                 out.push(f32::from_bits(bits));
             }
 
-            let v1 = self.inner.version.load(Ordering::Acquire);
+            std::sync::atomic::fence(Ordering::Acquire);
+            let v1 = self.inner.version.load(Ordering::Relaxed);
             if v0 == v1 {
                 // Verified consistent, non-torn snapshot
                 return true;
@@ -300,16 +252,6 @@ impl PcmRingBuffer {
         // Under sustained extreme contention, strictly refuse to return unverified/torn data.
         out.clear();
         false
-    }
-
-    /// Reads the most recent `count` samples, spinning indefinitely until a coherent snapshot is verified.
-    pub fn read_recent_blocking(&self, count: usize, out: &mut Vec<f32>) {
-        loop {
-            if self.read_recent(count, out) {
-                return;
-            }
-            std::hint::spin_loop();
-        }
     }
 }
 

@@ -69,6 +69,16 @@ pub fn select_capture_device(
     device_opt.ok_or_else(|| LavaError::Audio("Audio capture device not found".into()))
 }
 
+/// Returns `true` only for fatal stream errors; transient buffer discontinuities (`Xrun`),
+/// automatic default-device reroutes (`DeviceChanged`), and realtime priority refusals must not
+/// kill an active capture stream.
+fn is_fatal_stream_error(kind: cpal::ErrorKind) -> bool {
+    !matches!(
+        kind,
+        cpal::ErrorKind::Xrun | cpal::ErrorKind::DeviceChanged | cpal::ErrorKind::RealtimeDenied
+    )
+}
+
 // Helper to get the correct host across platforms
 fn get_cpal_host() -> cpal::Host {
     #[cfg(target_os = "windows")]
@@ -138,9 +148,10 @@ impl NativeAudioCapture {
                 let channels = config.channels as usize;
                 let sample_rate = config.sample_rate;
 
-                let err_fn = move |err| {
-                    stream_alive_cb.store(false, Ordering::SeqCst);
-                    eprintln!("Audio stream error: {}", err);
+                let err_fn = move |err: cpal::Error| {
+                    if is_fatal_stream_error(err.kind()) {
+                        stream_alive_cb.store(false, Ordering::SeqCst);
+                    }
                 };
 
                 let stream_res = match sample_format {
@@ -346,5 +357,15 @@ mod tests {
         {
             let _ = res;
         }
+    }
+
+    #[test]
+    fn test_non_fatal_cpal_errors_do_not_kill_stream() {
+        assert!(!is_fatal_stream_error(cpal::ErrorKind::Xrun));
+        assert!(!is_fatal_stream_error(cpal::ErrorKind::DeviceChanged));
+        assert!(!is_fatal_stream_error(cpal::ErrorKind::RealtimeDenied));
+
+        assert!(is_fatal_stream_error(cpal::ErrorKind::DeviceNotAvailable));
+        assert!(is_fatal_stream_error(cpal::ErrorKind::StreamInvalidated));
     }
 }

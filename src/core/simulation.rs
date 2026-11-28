@@ -72,6 +72,10 @@ pub struct Simulation {
     reactive_noise_scale: f32,
     /// Radius multiplier derived from the active reactive source (1.0 = no modulation).
     radius_multiplier: f32,
+    /// Smoothed bass level for onset detection.
+    audio_bass_ema: f32,
+    /// Simulation timestamp of the last audio shockwave boom.
+    last_boom_time: f32,
     /// Internal deterministic PRNG.
     prng: SimplePrng,
 }
@@ -125,6 +129,8 @@ impl Simulation {
             reactive_buoyancy_scale: 1.0,
             reactive_noise_scale: 1.0,
             radius_multiplier: 1.0,
+            audio_bass_ema: 0.0,
+            last_boom_time: -1.0,
             prng,
         };
         sim.sync_derived_params();
@@ -274,9 +280,46 @@ impl Simulation {
         // Midrange frequencies modulate fluid turbulence and Brownian noise
         self.reactive_noise_scale = 1.0 + audio.mid * 2.5;
 
-        // Audio does not modulate radius. Reset it so that radii fall back to the
-        // configured base rather than retaining a system-signal multiplier.
-        self.set_radius_multiplier(1.0);
+        let dt_since_boom = self.elapsed_time - self.last_boom_time;
+        let is_spike = audio.bass >= 0.32
+            && (audio.bass - self.audio_bass_ema) >= 0.08
+            && dt_since_boom >= 0.28;
+        let is_heavy = audio.bass >= 0.68 && dt_since_boom >= 0.40;
+        let energy = audio.bass.max(audio.volume);
+
+        if is_spike || is_heavy {
+            self.last_boom_time = self.elapsed_time;
+            let edge = (self.prng.next_u32() & 3) as u8;
+            let along = 0.5 + self.prng.next_f32_signed() * 0.42;
+            let (boom_x, boom_y) = match edge {
+                0 => (0.06, along),
+                1 => (0.94, along),
+                2 => (along, 0.06),
+                _ => (along, 0.94),
+            };
+            let force = (1.2 + audio.bass * 2.0).clamp(1.2, 3.2);
+            super::interaction::apply_shockwave(&mut self.blobs, boom_x, boom_y, force);
+            for blob in &mut self.blobs {
+                let dx_center = 0.5 - blob.x;
+                let dy_center = 0.5 - blob.y;
+                if dx_center.abs() > 0.30 || dy_center.abs() > 0.30 {
+                    blob.vx = (blob.vx + dx_center * 0.9).clamp(-2.0, 2.0);
+                    blob.vy = (blob.vy + dy_center * 0.9).clamp(-2.0, 2.0);
+                }
+            }
+            self.set_radius_multiplier(1.32);
+        } else if energy >= 0.05 {
+            self.set_radius_multiplier(1.0 + audio.bass * 0.28 + audio.volume * 0.10);
+            let shimmer_amp = 0.04 + (audio.mid + audio.treble) * 0.06;
+            for (i, blob) in self.blobs.iter_mut().enumerate() {
+                let wave = (self.elapsed_time * 9.0 + i as f32 * 1.3).sin();
+                blob.temperature = (blob.temperature + wave * shimmer_amp).clamp(0.0, 1.0);
+            }
+        } else {
+            self.set_radius_multiplier(1.0);
+        }
+
+        self.audio_bass_ema = self.audio_bass_ema * 0.85 + audio.bass * 0.15;
 
         self.sync_derived_params();
 
@@ -730,6 +773,96 @@ mod tests {
             "rescaled radius must survive the next poll: {} vs {}",
             sim.blobs[0].radius,
             after_rescale
+        );
+    }
+
+    #[test]
+    fn test_audio_soft_music_pulses_radii_without_boom() {
+        let mut sim = Simulation::new(PhysicsParams::default(), 6, 42);
+        let base_radii: Vec<f32> = sim.blobs.iter().map(|b| b.radius).collect();
+        let initial_temps: Vec<f32> = sim.blobs.iter().map(|b| b.temperature).collect();
+
+        sim.step_audio(0.033, &AudioSignals::new(0.18, 0.20, 0.15, 0.16));
+
+        assert!(
+            sim.last_boom_time < 0.0,
+            "soft music must not trigger a shockwave boom"
+        );
+        for (blob, &base) in sim.blobs.iter().zip(base_radii.iter()) {
+            assert!(
+                blob.radius > base,
+                "soft music should pulse blob radii above base"
+            );
+        }
+        assert!(
+            sim.blobs
+                .iter()
+                .zip(initial_temps.iter())
+                .any(|(b, &t)| (b.temperature - t).abs() > 1e-4),
+            "soft music should shimmer blob temperatures"
+        );
+    }
+
+    #[test]
+    fn test_audio_intense_bass_triggers_shockwave_boom() {
+        let mut sim = Simulation::new(PhysicsParams::default(), 6, 42);
+        let base_radii: Vec<f32> = sim.blobs.iter().map(|b| b.radius).collect();
+        let initial_vx: Vec<f32> = sim.blobs.iter().map(|b| b.vx).collect();
+
+        let intense = AudioSignals::new(0.75, 0.4, 0.2, 0.7);
+        sim.apply_audio_signals(&intense);
+
+        assert!(
+            (sim.last_boom_time - 0.0).abs() < 1e-6,
+            "intense bass must trigger boom at elapsed_time=0.0"
+        );
+        assert!(
+            (sim.blobs[0].radius - base_radii[0] * 1.32).abs() < 1e-5,
+            "boom must expand radii to 1.32x"
+        );
+        assert!(
+            sim.blobs
+                .iter()
+                .zip(initial_vx.iter())
+                .any(|(b, &vx)| (b.vx - vx).abs() > 0.01),
+            "boom must impart shockwave velocity"
+        );
+
+        // Cooldown prevents spamming within < 0.40s for heavy bass
+        sim.elapsed_time = 0.10;
+        sim.apply_audio_signals(&intense);
+        assert!(
+            (sim.last_boom_time - 0.0).abs() < 1e-6,
+            "boom must not re-fire during cooldown"
+        );
+
+        // After cooldown (> 0.40s), another intense beat booms again
+        sim.elapsed_time = 0.45;
+        sim.apply_audio_signals(&intense);
+        assert!(
+            (sim.last_boom_time - 0.45).abs() < 1e-6,
+            "boom should fire again after cooldown"
+        );
+    }
+
+    #[test]
+    fn test_audio_repeated_booms_do_not_pin_blobs_in_corners() {
+        let mut sim = Simulation::new(PhysicsParams::default(), 12, 1337);
+        let heavy = AudioSignals::new(0.8, 0.5, 0.3, 0.8);
+
+        for _ in 0..90 {
+            sim.step_audio(0.033, &heavy);
+        }
+
+        let not_in_corners = sim
+            .blobs
+            .iter()
+            .filter(|b| !((b.x <= 0.05 || b.x >= 0.95) && (b.y <= 0.05 || b.y >= 0.95)))
+            .count();
+        assert!(
+            not_in_corners >= sim.blobs.len() / 2,
+            "repeated booms must scatter blobs rather than pinning them in corners ({not_in_corners}/{})",
+            sim.blobs.len()
         );
     }
 }
