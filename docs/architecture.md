@@ -82,4 +82,4 @@ The library crate root is [src/lib.rs](../src/lib.rs) and the CLI binary entry p
 
 ## Verification and benchmarks
 
-The automated test suite contains 187 tests (157 unit tests and 30 integration tests) verified via `cargo test`, alongside headless checks (`cargo run -- --headless --frames 30`) and platform smoke scripts (`scripts/smoke_test.py` on Linux and `scripts/smoke_test_windows.ps1` on Windows). Criterion micro-benchmark measurements for field evaluation, rasterization, renderers, FFT, and Seqlock ring buffer contention are recorded in [benchmark_baseline.md](benchmarks/benchmark_baseline.md).
+The automated test suite contains 188 tests (158 unit tests and 30 integration tests) verified via `cargo test`, alongside headless checks (`cargo run -- --headless --frames 30`) and platform smoke scripts (`scripts/smoke_test.py` on Linux and `scripts/smoke_test_windows.ps1` on Windows). Criterion micro-benchmark measurements for field evaluation, rasterization, renderers, FFT, and Seqlock ring buffer contention are recorded in [benchmark_baseline.md](benchmarks/benchmark_baseline.md).

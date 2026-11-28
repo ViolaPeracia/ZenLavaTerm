@@ -523,7 +523,7 @@ fn draw_wizard(
         .map(|p| format!("File: {}", p.display()))
         .unwrap_or_else(|| "File: (no default config directory detected)".to_string());
     let footer_lines = [
-        " Up/Down Select  Left/Right Change  Enter Confirm  Esc Skip".to_string(),
+        " Up/Down Select  Left/Right Change  Enter Next/Confirm  Esc Skip".to_string(),
         " Tip: Run 'lavaterm --config' anytime to edit defaults.".to_string(),
         if let Some(err) = error_msg {
             format!(" Error: {err}")
@@ -638,8 +638,7 @@ pub fn run_setup_wizard(initial_config: &Config) -> Result<WizardOutcome> {
                         needs_redraw = true;
                     }
                     KeyCode::Enter => match state.selected_row {
-                        8 => return Ok(WizardOutcome::LaunchOnce(state.to_config())),
-                        _ => {
+                        7 => {
                             let cfg = state.to_config();
                             match save_path.clone() {
                                 Some(path) => match save_config(&path, &cfg) {
@@ -661,6 +660,13 @@ pub fn run_setup_wizard(initial_config: &Config) -> Result<WizardOutcome> {
                                     ));
                                 }
                             }
+                        }
+                        8 => return Ok(WizardOutcome::LaunchOnce(state.to_config())),
+                        _ => {
+                            // On setting rows (0..=6), Enter confirms the row and advances downward
+                            // instead of unexpectedly saving and exiting the wizard.
+                            state.move_down();
+                            needs_redraw = true;
                         }
                     },
                     _ => {}
