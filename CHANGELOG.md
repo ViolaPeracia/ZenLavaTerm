@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Audio-reactive boom/shimmer & WASAPI pause handling**: Added edge-detonated bass shockwaves with inward rebound and soft-music radius/temperature shimmer in `Simulation::apply_audio_signals`; decayed idle WASAPI loopback ring buffers to silence after 120ms without new samples; ignored non-fatal `cpal::ErrorKind::Xrun` / `DeviceChanged` / `RealtimeDenied` callbacks so pausing playback does not trigger synthetic fallback beats.
 - **CLI argument validation & conflict enforcement**: Applied CLI overrides (`--blobs`, `--renderer`, `--fps`, `--width`/`--height`, `--shockwave-force`, `--stir-force`) into `Config` and ran `Config::validate()` before simulation startup; rejected explicit `--system` + `--audio` combinations with a clear conflict error; enforced upper bounds on `widget.width`/`widget.height` (`1..=1000`) and `target_fps` (`1..=240`) in `Config::validate()` and `resolve_policy()`.
 - **Terminal cleanup safety & inline rendering**: Added an RAII `TerminalGuard` in `run_event_loop` to restore mouse capture, alternate screen, cursor visibility, and raw mode on any early error return; initialized system and audio providers before entering raw mode; wired `CursorMode::Inline` / `CursorMode::Absolute` into renderers based on `InteractiveMode`.
 - **Consistent simulation seed on reset**: Unified startup and `Action::Reset` to use `DEFAULT_SEED` (`1337`).
@@ -24,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Audio mode retained a stale radius multiplier** (#84): `apply_audio_signals` did not reset `radius_multiplier`, so a radius scale set by system signals would persist if audio signals were ever applied to the same simulation. It now resets to `1.0`. Not reachable today, since `--system` and `--audio` are mutually exclusive.
 
 ### Added
+- `scripts/smoke_test_windows.ps1`: Zero-dependency PowerShell automated smoke test suite for Windows (metadata, headless, snapshots, audio enumeration, CLI validation, and theme error checks).
 - `Simulation::nudge_buoyancy(delta)`, `Simulation::base_params()`, and `Simulation::set_base_params()` as the supported entry points for user-driven buoyancy changes and configuration reads/writes.
 - Five regression tests in `src/core/simulation.rs` covering radius variety preservation, config-respect under saturated signals, keyboard offset survival across polls, audio-signal idempotency, and `apply_radius_scale` composition. Five further tests cover `apply_radius_scale` idempotency, the audio radius-multiplier reset, construction preserving the configured buoyancy range, the absence of banked speed-key credit, and compact physics surviving a reactive poll.
 
