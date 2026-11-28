@@ -2,6 +2,48 @@
 
 use super::metaball::Blob;
 
+/// Active expanding surface ripple wave spawned by keyboard typing or audio hits.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RippleWave {
+    /// Origin X in normalized $[0.0, 1.0]$ space.
+    pub cx: f32,
+    /// Origin Y in normalized $[0.0, 1.0]$ space.
+    pub cy: f32,
+    /// Elapsed lifetime in seconds.
+    pub age: f32,
+    /// Total duration in seconds before the wave fades out.
+    pub max_age: f32,
+    /// Initial wave amplitude multiplier.
+    pub intensity: f32,
+}
+
+impl RippleWave {
+    /// Creates a new expanding ripple wave centered at `(cx, cy)`.
+    pub fn new(cx: f32, cy: f32, intensity: f32) -> Self {
+        Self {
+            cx: cx.clamp(0.05, 0.95),
+            cy: cy.clamp(0.05, 0.95),
+            age: 0.0,
+            max_age: 0.85,
+            intensity: intensity.clamp(0.1, 3.0),
+        }
+    }
+
+    /// Current wavefront radius in isotropic normalized units.
+    #[inline]
+    pub fn radius(&self) -> f32 {
+        let p = (self.age / self.max_age).clamp(0.0, 1.0);
+        0.03 + p * 0.62
+    }
+
+    /// Current wave strength envelope decaying smoothly from `intensity` to `0.0`.
+    #[inline]
+    pub fn envelope(&self) -> f32 {
+        let rem = (1.0 - self.age / self.max_age).clamp(0.0, 1.0);
+        rem * rem * self.intensity
+    }
+}
+
 /// High-level interaction domain representation.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Interaction {
@@ -17,6 +59,8 @@ pub enum Interaction {
     },
     /// Global acoustic wave ripple from keyboard press.
     Ripple { intensity: f32 },
+    /// Localized keyboard ripple emitted at `(x, y)` in $[0.0, 1.0]$.
+    RippleAt { x: f32, y: f32, intensity: f32 },
     /// Vertical pressure wave from mouse scroll.
     Pressure { delta: f32 },
     /// Localized thermal injection (heating or cooling).
@@ -80,7 +124,7 @@ pub fn apply_stir(blobs: &mut [Blob], x: f32, y: f32, vx: f32, vy: f32, radius: 
     }
 }
 
-/// Applies global acoustic ripple to all blobs.
+/// Applies global acoustic ripple to all blobs with visible radial/harmonic perturbation.
 pub fn apply_ripple<F>(blobs: &mut [Blob], intensity: f32, mut prng_fn: F)
 where
     F: FnMut() -> f32,
@@ -89,8 +133,27 @@ where
     for blob in blobs.iter_mut() {
         let rx = prng_fn();
         let ry = prng_fn();
-        blob.vx = (blob.vx + rx * i_clamped * 0.05).clamp(-2.0, 2.0);
-        blob.vy = (blob.vy + ry * i_clamped * 0.05).clamp(-2.0, 2.0);
+        blob.vx = (blob.vx + rx * i_clamped * 0.24).clamp(-2.0, 2.0);
+        blob.vy = (blob.vy + ry * i_clamped * 0.24).clamp(-2.0, 2.0);
+    }
+}
+
+/// Applies a localized radial ripple impulse from `(origin_x, origin_y)` so nearby blobs
+/// visibly recoil and shimmer when a key is pressed.
+pub fn apply_ripple_at(blobs: &mut [Blob], origin_x: f32, origin_y: f32, intensity: f32) {
+    let cx = origin_x.clamp(0.0, 1.0);
+    let cy = origin_y.clamp(0.0, 1.0);
+    let i_clamped = intensity.clamp(0.0, 5.0);
+
+    for blob in blobs.iter_mut() {
+        let dx = blob.x - cx;
+        let dy = blob.y - cy;
+        let dist = (dx * dx + dy * dy).sqrt() + 0.01;
+        let impulse = ((i_clamped * 0.14) / (dist + 0.12)).min(0.45);
+        blob.vx = (blob.vx + (dx / dist) * impulse).clamp(-2.0, 2.0);
+        blob.vy = (blob.vy + (dy / dist) * impulse).clamp(-2.0, 2.0);
+        let heat = (i_clamped * 0.04) / (dist + 0.18);
+        blob.temperature = (blob.temperature + heat).clamp(0.0, 1.0);
     }
 }
 

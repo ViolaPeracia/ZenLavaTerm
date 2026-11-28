@@ -21,17 +21,39 @@ pub fn evaluate_field(blobs: &[Blob], px: f32, py: f32) -> f32 {
     sum
 }
 
-/// Evaluates both the field intensity and the field-weighted temperature at `(px, py)`.
+/// Evaluates both the field intensity and the field-weighted temperature at `(px, py)`
+/// assuming a square `1:1` viewport.
 ///
 /// Returns `(field_intensity, weighted_temperature)`.
 #[inline]
 pub fn evaluate_with_temperature(blobs: &[Blob], px: f32, py: f32) -> (f32, f32) {
+    evaluate_with_temperature_aspect(blobs, px, py, 1.0)
+}
+
+/// Evaluates field intensity and weighted temperature with isotropic aspect-ratio correction.
+///
+/// `aspect_ratio` is `physical_width / physical_height` (e.g. `~1.8` on a widescreen terminal).
+/// Scaling the wider axis keeps metaballs visually circular instead of stretched horizontally.
+#[inline]
+pub fn evaluate_with_temperature_aspect(
+    blobs: &[Blob],
+    px: f32,
+    py: f32,
+    aspect_ratio: f32,
+) -> (f32, f32) {
+    let aspect = aspect_ratio.clamp(0.25, 4.0);
+    let (scale_x, scale_y) = if aspect >= 1.0 {
+        (aspect, 1.0)
+    } else {
+        (1.0, 1.0 / aspect)
+    };
+
     let mut total_field = 0.0;
     let mut weighted_temp = 0.0;
 
     for blob in blobs {
-        let dx = px - blob.x;
-        let dy = py - blob.y;
+        let dx = (px - blob.x) * scale_x;
+        let dy = (py - blob.y) * scale_y;
         let d_sq = dx * dx + dy * dy;
         let r_sq = blob.radius * blob.radius;
         let contribution = r_sq / (d_sq + EPSILON);

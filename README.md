@@ -53,7 +53,10 @@ cargo install --path .
 ## Quick start
 
 ```bash
-# Default lava theme with half-block rendering
+# Open the interactive keyboard setup menu to edit & save default config
+lavaterm --config
+
+# Default lava theme with half-block rendering (opens setup on first launch if no config.toml exists)
 lavaterm
 
 # Select a built-in theme preset
@@ -85,17 +88,17 @@ lavaterm --headless --frames 30
 
 | Input | Action |
 | :--- | :--- |
-| `q`, `Q`, `Esc`, `Ctrl+c` | Quit and restore terminal |
-| `Space`, `p`, `P` | Pause or resume simulation |
-| `r`, `R` | Reset blobs |
-| `Ctrl+i`, `Tab` | Toggle 1-line status HUD (mode, audio source, renderer, FPS) |
-| `+`, `=`, `Up`, `Right` | Increase buoyancy (+0.1) |
-| `-`, `_`, `Down`, `Left` | Decrease buoyancy (-0.1) |
+| `Esc`, `Ctrl+q`, `Ctrl+c` | Quit and restore terminal |
+| `Ctrl+p` | Pause or resume simulation |
+| `Ctrl+r` | Reset blobs and speed |
+| `Ctrl+i`, `Tab` | Show bordered top-left status HUD (fades out automatically) |
+| `+`, `=`, `Up`, `Right` | Increase simulation speed (+0.25x, up to 4.0x) |
+| `-`, `_`, `Down`, `Left` | Decrease simulation speed (-0.25x, down to 0.25x) |
 | Left click | Radial shockwave |
 | Click and drag | Stir fluid |
 | Right click | Thermal pulse |
 | Scroll wheel | Vertical convective pressure |
-| Typing keys | Harmonic wave ripples |
+| Any letter, number, `Space` | Expanding surface ripple wave across the lava |
 
 ## Documentation
 

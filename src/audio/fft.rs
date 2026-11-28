@@ -4,12 +4,13 @@ use super::signals::AudioSignals;
 use crate::{LavaError, Result};
 use std::f32::consts::PI;
 
-/// Zero-dependency Cooley-Tukey Radix-2 FFT and spectrum analyzer with pre-allocated scratch buffers.
+/// Zero-dependency Cooley-Tukey Radix-2 FFT and spectrum analyzer with pre-allocated scratch buffers
+/// and noise-gated Adaptive Auto-Gain Control (AGC) so both quiet and loud music stay responsive.
 #[derive(Debug, Clone)]
 pub struct SpectrumAnalyzer {
     /// Audio sample rate in Hz (e.g. 44100 or 48000).
     pub sample_rate: u32,
-    /// Analysis window size (power of two, e.g. 1024).
+    /// Analysis window size (power of two, e.g. 2048).
     pub window_size: usize,
     /// Precomputed Hann window coefficients.
     hann_window: Vec<f32>,
@@ -17,15 +18,24 @@ pub struct SpectrumAnalyzer {
     real_buf: Vec<f32>,
     /// Reusable imaginary FFT scratch buffer.
     imag_buf: Vec<f32>,
+    /// Adaptive peak-energy tracker for auto-gain normalization across volume levels.
+    agc_peak: f32,
 }
 
 impl Default for SpectrumAnalyzer {
     fn default() -> Self {
-        Self::new(44100, 1024)
+        Self::new(44100, 2048)
     }
 }
 
 impl SpectrumAnalyzer {
+    /// Minimum RMS level treated as audible audio (~ -64 dBFS noise gate).
+    const NOISE_GATE_RMS: f32 = 0.0006;
+    /// Floor for adaptive AGC peak so quiet room hiss is never amplified to 1.0.
+    const AGC_FLOOR: f32 = 0.018;
+    /// Initial AGC peak before the first loud frame arrives.
+    const AGC_INITIAL: f32 = 0.10;
+
     /// Creates a new `SpectrumAnalyzer` with given sample rate and window size.
     pub fn new(sample_rate: u32, window_size: usize) -> Self {
         let size = window_size.next_power_of_two().max(64);
@@ -39,6 +49,7 @@ impl SpectrumAnalyzer {
             hann_window,
             real_buf: vec![0.0f32; size],
             imag_buf: vec![0.0f32; size],
+            agc_peak: Self::AGC_INITIAL,
         }
     }
 
@@ -153,12 +164,16 @@ impl SpectrumAnalyzer {
         self.real_buf[copy_len..].fill(0.0);
         self.imag_buf.fill(0.0);
 
-        // Compute RMS volume
+        // Compute RMS volume and apply noise gate so true silence decays cleanly to zero.
         let mut rms_sum = 0.0f32;
         for &s in &self.real_buf[..copy_len] {
             rms_sum += s * s;
         }
-        let volume = (rms_sum / copy_len as f32).sqrt().min(1.0);
+        let raw_volume = (rms_sum / copy_len as f32).sqrt().min(1.0);
+        if raw_volume < Self::NOISE_GATE_RMS {
+            self.agc_peak = (self.agc_peak * 0.985).max(Self::AGC_FLOOR);
+            return AudioSignals::default();
+        }
 
         // Apply precomputed Hann window and run in-place FFT
         for (sample, &coeff) in self.real_buf.iter_mut().zip(self.hann_window.iter()) {
@@ -169,16 +184,14 @@ impl SpectrumAnalyzer {
             return AudioSignals::default();
         }
 
-        // Magnitudes (positive frequencies)
+        // Parseval band RMS energy (positive frequencies; avoids dilution across empty bins)
         let num_bins = n / 2;
         let freq_per_bin = self.sample_rate as f32 / n as f32;
+        let inv_n = 1.0 / n as f32;
 
-        let mut bass_sum = 0.0f32;
-        let mut bass_count = 0;
-        let mut mid_sum = 0.0f32;
-        let mut mid_count = 0;
-        let mut treble_sum = 0.0f32;
-        let mut treble_count = 0;
+        let mut bass_sq = 0.0f32;
+        let mut mid_sq = 0.0f32;
+        let mut treble_sq = 0.0f32;
 
         for (bin, (&r, &im)) in self
             .real_buf
@@ -188,39 +201,35 @@ impl SpectrumAnalyzer {
             .take(num_bins)
         {
             let freq = bin as f32 * freq_per_bin;
-            let magnitude = (r * r + im * im).sqrt() / (n as f32);
+            let mag = (r * r + im * im).sqrt() * inv_n;
+            let mag_sq = mag * mag;
 
             if (20.0..250.0).contains(&freq) {
-                bass_sum += magnitude;
-                bass_count += 1;
+                bass_sq += mag_sq;
             } else if (250.0..4000.0).contains(&freq) {
-                mid_sum += magnitude;
-                mid_count += 1;
-            } else if (4000.0..20000.0).contains(&freq) {
-                treble_sum += magnitude;
-                treble_count += 1;
+                mid_sq += mag_sq;
+            } else if (4000.0..16000.0).contains(&freq) {
+                treble_sq += mag_sq;
             }
         }
 
-        let bass_avg = if bass_count > 0 {
-            bass_sum / bass_count as f32
-        } else {
-            0.0
-        };
-        let mid_avg = if mid_count > 0 {
-            mid_sum / mid_count as f32
-        } else {
-            0.0
-        };
-        let treble_avg = if treble_count > 0 {
-            treble_sum / treble_count as f32
-        } else {
-            0.0
-        };
+        let bass_rms = bass_sq.sqrt();
+        let mid_rms = mid_sq.sqrt();
+        let treble_rms = treble_sq.sqrt();
+        let frame_energy = (bass_sq + mid_sq + treble_sq).sqrt();
 
-        let bass = (bass_avg * 15.0).clamp(0.0, 1.0);
-        let mid = (mid_avg * 30.0).clamp(0.0, 1.0);
-        let treble = (treble_avg * 60.0).clamp(0.0, 1.0);
+        // Adaptive AGC: fast attack on loud hits, slow release so quiet songs scale up smoothly.
+        if frame_energy > self.agc_peak {
+            self.agc_peak += (frame_energy - self.agc_peak) * 0.35;
+        } else {
+            self.agc_peak = (self.agc_peak * 0.992).max(Self::AGC_FLOOR);
+        }
+        let ref_level = self.agc_peak.max(Self::AGC_FLOOR);
+
+        let bass = ((bass_rms / ref_level) * 0.85).powf(0.85).clamp(0.0, 1.0);
+        let mid = ((mid_rms / ref_level) * 0.95).powf(0.85).clamp(0.0, 1.0);
+        let treble = ((treble_rms / ref_level) * 1.25).powf(0.85).clamp(0.0, 1.0);
+        let volume = ((raw_volume / (ref_level * 2.4)).powf(0.85)).clamp(0.0, 1.0);
 
         AudioSignals::new(bass, mid, treble, volume)
     }
@@ -280,16 +289,37 @@ mod tests {
 
     #[test]
     fn test_fft_reused_buffers_are_deterministic_across_calls() {
-        let mut analyzer = SpectrumAnalyzer::new(44100, 512);
+        let mut a1 = SpectrumAnalyzer::new(44100, 512);
+        let mut a2 = SpectrumAnalyzer::new(44100, 512);
         let bass = generate_sine_wave(100.0, 44100, 512);
         let silence = vec![0.0f32; 512];
 
-        let first = analyzer.analyze(&bass);
-        let silent = analyzer.analyze(&silence);
-        let second = analyzer.analyze(&bass);
+        let first = a1.analyze(&bass);
+        let silent = a1.analyze(&silence);
+        let second = a2.analyze(&bass);
 
         assert_eq!(silent, AudioSignals::default());
         assert_eq!(first, second);
+    }
+
+    #[test]
+    fn test_fft_agc_adapts_to_quiet_desktop_music() {
+        let mut analyzer = SpectrumAnalyzer::new(48000, 2048);
+        // Simulate quiet desktop music (~15% amplitude 60Hz bass kick)
+        let quiet_bass: Vec<f32> = generate_sine_wave(60.0, 48000, 2048)
+            .into_iter()
+            .map(|s| s * 0.15)
+            .collect();
+
+        let mut sig = AudioSignals::default();
+        for _ in 0..40 {
+            sig = analyzer.analyze(&quiet_bass);
+        }
+        assert!(
+            sig.bass > 0.45,
+            "AGC must keep quiet 15%-amplitude bass strongly responsive, got {}",
+            sig.bass
+        );
     }
 
     #[test]

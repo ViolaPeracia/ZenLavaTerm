@@ -36,6 +36,8 @@ pub struct RasterizeOptions {
     pub ambient_glow: bool,
     /// Enable animated molten bottom pool that blobs organically merge with and detach from.
     pub molten_pool: bool,
+    /// Physical viewport aspect ratio (`width / height`) for isotropic circular metaballs.
+    pub aspect_ratio: f32,
 }
 
 impl Default for RasterizeOptions {
@@ -45,6 +47,7 @@ impl Default for RasterizeOptions {
             gradient: true,
             ambient_glow: true,
             molten_pool: true,
+            aspect_ratio: 1.0,
         }
     }
 }
@@ -66,7 +69,23 @@ impl RasterizeOptions {
             gradient,
             ambient_glow: glow && gradient && renderer_type != "braille",
             molten_pool,
+            aspect_ratio: 1.0,
         }
+    }
+
+    /// Computes physical `width / height` aspect ratio for a terminal grid
+    /// assuming standard monospace character cells (`cell_width ≈ 0.5 * cell_height`).
+    pub fn physical_aspect_ratio(cols: u16, rows: u16) -> f32 {
+        if cols == 0 || rows == 0 {
+            return 1.0;
+        }
+        ((cols as f32 * 0.5) / rows as f32).clamp(0.35, 3.5)
+    }
+
+    /// Returns a copy of these options with an explicit physical aspect ratio.
+    pub fn with_aspect_ratio(mut self, aspect_ratio: f32) -> Self {
+        self.aspect_ratio = aspect_ratio.clamp(0.25, 4.0);
+        self
     }
 }
 
@@ -99,6 +118,14 @@ pub fn rasterize_simulation(
     let pixels = buffer.as_mut_slice();
     let use_pool = options.molten_pool && height >= 6;
     let t = sim.elapsed_time;
+    let aspect = options.aspect_ratio.clamp(0.25, 4.0);
+    let (scale_x, scale_y) = if aspect >= 1.0 {
+        (aspect, 1.0)
+    } else {
+        (1.0, 1.0 / aspect)
+    };
+    let ripples = sim.ripple_waves();
+    let beat_glow = sim.beat_envelope() * 0.25;
 
     for y in 0..height {
         // Map discrete y [0..height] to normalized space [0.0..1.0] (y=0 top in terminal, so invert for simulation bottom heat)
@@ -109,7 +136,7 @@ pub fn rasterize_simulation(
         for x in 0..width {
             let sim_x = (x as f32 + 0.5) * inv_w;
 
-            let (mut field_val, mut temp) = sim.evaluate_at(sim_x, sim_y);
+            let (mut field_val, mut temp) = sim.evaluate_at_aspect(sim_x, sim_y, aspect);
 
             if check_pool {
                 let surface_y = 0.042
@@ -124,6 +151,23 @@ pub fn rasterize_simulation(
                 field_val = combined;
             }
 
+            let mut ripple_glow = 0.0f32;
+            if !ripples.is_empty() {
+                const BAND: f32 = 0.068;
+                for wave in ripples {
+                    let dx = (sim_x - wave.cx) * scale_x;
+                    let dy = (sim_y - wave.cy) * scale_y;
+                    let dist = (dx * dx + dy * dy).sqrt();
+                    let delta = (dist - wave.radius()).abs();
+                    if delta < BAND {
+                        let c = (delta / BAND * std::f32::consts::FRAC_PI_2).cos();
+                        let ring = c * c * wave.envelope();
+                        field_val += ring * 0.45;
+                        ripple_glow = (ripple_glow + ring * 0.72).min(1.0);
+                    }
+                }
+            }
+
             pixels[row_start + x] = palette.sample_lava_surface(
                 temp,
                 field_val,
@@ -131,6 +175,7 @@ pub fn rasterize_simulation(
                 sim_y,
                 options.gradient,
                 options.ambient_glow,
+                (beat_glow + ripple_glow).min(1.0),
             );
         }
     }
@@ -165,6 +210,7 @@ mod tests {
             gradient: true,
             ambient_glow: false,
             molten_pool: true,
+            aspect_ratio: 1.0,
         };
         rasterize_simulation(&sim, &mut fb, &palette, &opts);
 

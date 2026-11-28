@@ -94,7 +94,9 @@ Run `lavaterm --help` for the live flag summary from the installed binary. Note 
 
 | Flag | Argument | Description |
 | :--- | :--- | :--- |
-| `-c`, `--config` | `<PATH>` | Path to a custom TOML configuration file. |
+| `-c`, `--config` | `[PATH]` | Without a path, opens the interactive keyboard setup menu to save defaults. With `<PATH>`, loads a custom TOML file. |
+| `--setup` | | Open the interactive keyboard setup menu to edit and save default settings. |
+| `--no-setup` | | Skip the automatic first-run setup wizard. |
 | `-r`, `--renderer` | `<TYPE>` | Renderer backend: `halfblock`, `block`, or `braille`. |
 | `--fps` | `<FPS>` | Target frames per second (`1..=240`). |
 | `--blobs` | `<COUNT>` | Number of metaball blobs (`1..=128`). |

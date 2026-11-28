@@ -6,4 +6,4 @@ pub mod snapshot;
 
 pub use compact::{should_compact, CompactProfile, CompactScaler};
 pub use policy::{resolve_policy, ExecutionMode, PolicyInput, ResolvedPolicy};
-pub use snapshot::{render_snapshot, render_snapshot_options};
+pub use snapshot::{render_snapshot, render_snapshot_options, render_snapshot_with_options};

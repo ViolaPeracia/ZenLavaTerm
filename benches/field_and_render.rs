@@ -48,12 +48,14 @@ fn bench_rasterization(c: &mut Criterion) {
         gradient: true,
         ambient_glow: true,
         molten_pool: true,
+        aspect_ratio: 1.0,
     };
     let stepped_opts = RasterizeOptions {
         threshold: 1.0,
         gradient: false,
         ambient_glow: false,
         molten_pool: false,
+        aspect_ratio: 1.0,
     };
 
     group.bench_function("rasterize_80x48", |b| {

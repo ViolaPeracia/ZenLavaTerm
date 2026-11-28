@@ -1153,3 +1153,101 @@ fn test_v110_audio_loopback_auto_enables_audio_flag() {
         );
     }
 }
+
+#[test]
+fn test_v110_ripple_wave_speed_scale_and_aspect_ratio_rendering() {
+    use lavaterm::core::Interaction;
+
+    let palette = ColorPalette::default();
+    let mut sim = Simulation::new(PhysicsParams::default(), 6, 42);
+    assert_eq!(sim.speed_scale(), 1.0);
+
+    // Speed up and slow down visibly alter elapsed simulation time
+    sim.nudge_speed(1.0);
+    assert!((sim.speed_scale() - 2.0).abs() < 1e-5);
+    sim.step(0.05);
+    assert!(
+        (sim.elapsed_time - 0.10).abs() < 1e-4,
+        "2.0x speed must advance elapsed_time twice as fast, got {}",
+        sim.elapsed_time
+    );
+
+    // Triggering localized ripple spawns an active expanding wave that visibly lights up the framebuffer
+    let mut fb_before = VirtualFramebuffer::new(60, 30, palette.background);
+    let mut fb_after = VirtualFramebuffer::new(60, 30, palette.background);
+    let opts = RasterizeOptions::default().with_aspect_ratio(1.8);
+    rasterize_simulation(&sim, &mut fb_before, &palette, &opts);
+
+    sim.apply_interaction(&Interaction::RippleAt {
+        x: 0.5,
+        y: 0.5,
+        intensity: 1.0,
+    });
+    assert_eq!(sim.ripple_waves().len(), 1);
+    sim.step(0.05);
+    rasterize_simulation(&sim, &mut fb_after, &palette, &opts);
+    assert_ne!(
+        fb_before.as_slice(),
+        fb_after.as_slice(),
+        "Active RippleWave must visibly modify rasterized pixels"
+    );
+
+    // Aspect-ratio correction narrows horizontal span proportionally so blobs stay circular
+    let single_blob = vec![lavaterm::core::Blob::new(0.5, 0.5, 0.1, 1.0)];
+    let (f_square, _) =
+        lavaterm::core::field::evaluate_with_temperature_aspect(&single_blob, 0.6, 0.5, 1.0);
+    let (f_wide, _) =
+        lavaterm::core::field::evaluate_with_temperature_aspect(&single_blob, 0.6, 0.5, 2.0);
+    assert!(
+        f_wide < f_square * 0.5,
+        "Widescreen aspect correction must scale horizontal distance so circles don't stretch"
+    );
+}
+
+#[test]
+fn test_v110_save_config_roundtrip_and_i32_f64_pcm() {
+    use lavaterm::audio::{PcmRingBuffer, SpectrumAnalyzer};
+    use lavaterm::config::{load_from_path, save_config};
+
+    let temp_path = std::env::temp_dir().join(format!(
+        "lavaterm_save_roundtrip_{}.toml",
+        std::process::id()
+    ));
+    let mut cfg = Config::default();
+    cfg.theme.name = Some("cyberpunk".to_string());
+    cfg.render.fps = 60;
+    cfg.render.glow = true;
+    cfg.render.molten_pool = true;
+
+    save_config(&temp_path, &cfg).expect("save_config succeeds");
+    let reloaded = load_from_path(&temp_path).expect("saved config must reload cleanly");
+    let _ = std::fs::remove_file(&temp_path);
+    assert_eq!(reloaded.theme.name.as_deref(), Some("cyberpunk"));
+    assert_eq!(reloaded.render.fps, 60);
+
+    // Verify 32-bit int and 64-bit float PCM ingestion produce valid bass
+    let ring = PcmRingBuffer::new(4096);
+    let mut analyzer = SpectrumAnalyzer::new(48000, 1024);
+    let mut i32_stereo = Vec::with_capacity(2048);
+    for i in 0..1024 {
+        let s = ((2.0 * std::f64::consts::PI * 80.0 * i as f64 / 48000.0).sin()
+            * 0.5
+            * i32::MAX as f64) as i32;
+        i32_stereo.push(s);
+        i32_stereo.push(s);
+    }
+    ring.push_interleaved_i32(&i32_stereo, 2);
+    let mut buf = Vec::new();
+    assert!(ring.read_recent(1024, &mut buf));
+    let sig_i32 = analyzer.analyze(&buf);
+    assert!(sig_i32.bass > 0.2, "I32 PCM must register bass energy");
+
+    ring.clear();
+    let f64_mono: Vec<f64> = (0..1024)
+        .map(|i| (2.0 * std::f64::consts::PI * 80.0 * i as f64 / 48000.0).sin() * 0.5)
+        .collect();
+    ring.push_interleaved_f64(&f64_mono, 1);
+    assert!(ring.read_recent(1024, &mut buf));
+    let sig_f64 = analyzer.analyze(&buf);
+    assert!(sig_f64.bass > 0.2, "F64 PCM must register bass energy");
+}

@@ -22,6 +22,7 @@ pub struct LiveAudioProvider {
     fallback_generator: SyntheticAudioGenerator,
     last_samples_written: usize,
     last_sample_time: Option<std::time::Instant>,
+    last_signals: AudioSignals,
     _backend: Option<Box<dyn Any + Send + Sync>>,
 }
 
@@ -58,6 +59,7 @@ impl LiveAudioProvider {
             fallback_generator: SyntheticAudioGenerator::new(120.0),
             last_samples_written: 0,
             last_sample_time: None,
+            last_signals: AudioSignals::default(),
             _backend: backend,
         }
     }
@@ -128,10 +130,11 @@ impl AudioProvider for LiveAudioProvider {
             return self.fallback_generator.poll_signals();
         }
 
-        // WASAPI loopback stops delivering callbacks when playback stops, leaving the
-        // last loud window frozen in the ring buffer. Return silence once idle.
+        // WASAPI loopback stops delivering callbacks when playback pauses, leaving the last loud
+        // window frozen in the ring buffer. Smoothly decay to silence between 40ms and 140ms idle.
         let written = self.ring_buffer.total_samples_written();
         if written == 0 {
+            self.last_signals = AudioSignals::default();
             return AudioSignals::default();
         }
         let now = std::time::Instant::now();
@@ -139,8 +142,19 @@ impl AudioProvider for LiveAudioProvider {
             self.last_samples_written = written;
             self.last_sample_time = Some(now);
         } else if let Some(last_time) = self.last_sample_time {
-            if now.duration_since(last_time) >= std::time::Duration::from_millis(120) {
+            let idle_ms = now.duration_since(last_time).as_millis();
+            if idle_ms >= 140 {
+                self.last_signals = AudioSignals::default();
                 return AudioSignals::default();
+            } else if idle_ms >= 40 {
+                let frac = 1.0 - ((idle_ms - 40) as f32 / 100.0).clamp(0.0, 1.0);
+                let scale = frac * frac;
+                return AudioSignals::new(
+                    self.last_signals.bass * scale,
+                    self.last_signals.mid * scale,
+                    self.last_signals.treble * scale,
+                    self.last_signals.volume * scale,
+                );
             }
         }
 
@@ -149,16 +163,18 @@ impl AudioProvider for LiveAudioProvider {
             .read_recent(self.analyzer.window_size, &mut self.sample_buf);
 
         if !is_coherent {
-            // If contention prevented verifying a 100% coherent snapshot,
-            // strictly avoid feeding unverified or torn data into FFT; fallback cleanly
-            return self.fallback_generator.poll_signals();
+            // Hold the last verified live frame on transient Seqlock contention rather than
+            // injecting a synthetic 120 BPM beat spike into real music playback.
+            return self.last_signals;
         }
 
-        if self.sample_buf.is_empty() {
+        let signals = if self.sample_buf.is_empty() {
             AudioSignals::default()
         } else {
             self.analyzer.analyze(&self.sample_buf)
-        }
+        };
+        self.last_signals = signals;
+        signals
     }
 
     fn is_live(&self) -> bool {

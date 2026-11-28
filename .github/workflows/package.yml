@@ -1,6 +1,17 @@
 name: Packaging Validation
 
 on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'wix/**'
+      - 'packaging/**'
+      - 'scripts/package_*'
+      - 'scripts/smoke_test*'
+      - '.github/workflows/package.yml'
   workflow_dispatch:
     inputs:
       version_override:

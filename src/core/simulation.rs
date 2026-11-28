@@ -1,6 +1,9 @@
 //! Simulation orchestrator managing blob states, physics stepping, and scalar field evaluation.
 
-use super::field::{evaluate_field, evaluate_with_temperature, ScalarField};
+use super::field::{
+    evaluate_field, evaluate_with_temperature, evaluate_with_temperature_aspect, ScalarField,
+};
+use super::interaction::RippleWave;
 use super::metaball::Blob;
 use super::physics::{step_blob, PhysicsParams};
 
@@ -76,18 +79,33 @@ pub struct Simulation {
     radius_multiplier: f32,
     /// Smoothed bass level for onset detection.
     audio_bass_ema: f32,
+    /// Smoothly decaying beat envelope `[0.0, 1.0]` for organic audio radius & glow pulses.
+    audio_beat_envelope: f32,
     /// Simulation timestamp of the last audio shockwave boom.
     last_boom_time: f32,
+    /// User-controlled playback speed multiplier (`0.25..=4.0`, controlled by `+` / `-`).
+    speed_scale: f32,
+    /// Active expanding surface ripple waves (bounded to `MAX_RIPPLE_WAVES`).
+    ripple_waves: Vec<RippleWave>,
     /// Internal deterministic PRNG.
     prng: SimplePrng,
 }
 
 impl Simulation {
-    /// Maximum allowable delta time to avoid simulation instability.
+    /// Maximum allowable delta time per physics substep to avoid simulation instability.
     pub const MAX_DT: f32 = 0.10;
+
+    /// Minimum user speed multiplier (`-`).
+    pub const MIN_SPEED_SCALE: f32 = 0.25;
+    /// Maximum user speed multiplier (`+`).
+    pub const MAX_SPEED_SCALE: f32 = 4.0;
+    /// Maximum concurrent expanding surface ripple waves.
+    const MAX_RIPPLE_WAVES: usize = 8;
 
     /// Time constant (seconds) for audio bass onset EMA (~0.15 alpha at 30 FPS).
     const AUDIO_EMA_TAU: f32 = 0.205;
+    /// Decay time constant (seconds) for smooth audio beat pulse envelope.
+    const AUDIO_BEAT_DECAY_TAU: f32 = 0.18;
 
     /// Lowest buoyancy `Config::validate` accepts from `[simulation].buoyancy`.
     const MIN_CONFIG_BUOYANCY: f32 = 0.0;
@@ -99,15 +117,15 @@ impl Simulation {
         let mut blobs = Vec::with_capacity(count);
         for i in 0..count {
             let frac = (i as f32 + 0.5) / count as f32;
-            let x = 0.15 + 0.70 * frac;
+            let x = 0.12 + 0.76 * frac;
             let is_bottom = i % 2 == 0;
             let y = if is_bottom {
-                0.10 + 0.10 * prng.next_f32_signed()
+                0.12 + 0.12 * prng.next_f32_signed()
             } else {
-                0.85 + 0.10 * prng.next_f32_signed()
+                0.82 + 0.12 * prng.next_f32_signed()
             };
             let temp = if is_bottom { 0.90 } else { 0.10 };
-            let radius = 0.08 + 0.04 * (prng.next_f32_signed().abs());
+            let radius = 0.072 + 0.036 * (prng.next_f32_signed().abs());
 
             let mut blob = Blob::new(x, y, radius, temp);
             blob.vx = prng.next_f32_signed() * 0.05;
@@ -138,15 +156,18 @@ impl Simulation {
             reactive_noise_scale: 1.0,
             radius_multiplier: 1.0,
             audio_bass_ema: 0.0,
+            audio_beat_envelope: 0.0,
             last_boom_time: -1.0,
+            speed_scale: 1.0,
+            ripple_waves: Vec::with_capacity(Self::MAX_RIPPLE_WAVES),
             prng,
         };
         sim.sync_derived_params();
         sim
     }
 
-    /// Resets blob positions, velocities, temperatures, user buoyancy offset, and audio state
-    /// while preserving configured `base_params` and active compact viewport scaling.
+    /// Resets blob positions, velocities, temperatures, speed scale, user buoyancy offset, and
+    /// audio/ripple state while preserving configured `base_params` and active compact scaling.
     pub fn reset(&mut self, seed: u64) {
         let count = self.blobs.len().max(1);
         let mut prng = SimplePrng::new(seed);
@@ -159,10 +180,41 @@ impl Simulation {
         self.reactive_noise_scale = 1.0;
         self.radius_multiplier = 1.0;
         self.audio_bass_ema = 0.0;
+        self.audio_beat_envelope = 0.0;
         self.last_boom_time = -1.0;
+        self.speed_scale = 1.0;
+        self.ripple_waves.clear();
         self.prng = prng;
         self.sync_derived_radii();
         self.sync_derived_params();
+    }
+
+    /// Returns the current user-controlled playback speed multiplier (`0.25..=4.0`).
+    pub fn speed_scale(&self) -> f32 {
+        self.speed_scale
+    }
+
+    /// Adjusts the simulation speed multiplier by `delta`, clamped to `[0.25, 4.0]`.
+    pub fn nudge_speed(&mut self, delta: f32) {
+        self.speed_scale =
+            (self.speed_scale + delta).clamp(Self::MIN_SPEED_SCALE, Self::MAX_SPEED_SCALE);
+    }
+
+    /// Returns currently active expanding surface ripple waves.
+    pub fn ripple_waves(&self) -> &[RippleWave] {
+        &self.ripple_waves
+    }
+
+    /// Returns the smoothly decaying audio beat pulse envelope `[0.0, 1.0]`.
+    pub fn beat_envelope(&self) -> f32 {
+        self.audio_beat_envelope
+    }
+
+    fn push_ripple_wave(&mut self, wave: RippleWave) {
+        if self.ripple_waves.len() >= Self::MAX_RIPPLE_WAVES {
+            self.ripple_waves.remove(0);
+        }
+        self.ripple_waves.push(wave);
     }
 
     /// Returns the user-configured physics parameters, before compact or reactive modulation.
@@ -212,8 +264,21 @@ impl Simulation {
         let current = self.blobs.len();
 
         if target < current {
-            self.blobs.truncate(target);
-            self.base_radii.truncate(target);
+            // Subsample evenly across existing blobs instead of truncating the tail, so
+            // blobs remain spatially distributed across the full chamber width.
+            let mut kept_blobs = Vec::with_capacity(target);
+            let mut kept_radii = Vec::with_capacity(target);
+            for k in 0..target {
+                let idx = if target == 1 {
+                    current / 2
+                } else {
+                    (k * (current - 1) + (target - 1) / 2) / (target - 1)
+                };
+                kept_blobs.push(self.blobs[idx].clone());
+                kept_radii.push(self.base_radii[idx]);
+            }
+            self.blobs = kept_blobs;
+            self.base_radii = kept_radii;
         } else if target > current {
             for i in current..target {
                 let x = (0.15 + 0.70 * ((self.prng.next_f32_signed() + 1.0) * 0.5)).clamp(0.1, 0.9);
@@ -264,15 +329,38 @@ impl Simulation {
         self.sync_derived_radii();
     }
 
-    /// Advances the simulation by $\Delta t$ seconds.
+    /// Advances the simulation by $\Delta t$ seconds, scaled by `speed_scale` with safe sub-stepping.
     pub fn step(&mut self, dt: f32) {
-        let dt_effective = dt.clamp(0.0, Self::MAX_DT);
-        self.elapsed_time += dt_effective;
+        let dt_clamped = dt.clamp(0.0, Self::MAX_DT);
+        let total_sim_dt = dt_clamped * self.speed_scale;
+        self.elapsed_time += total_sim_dt;
 
-        for blob in &mut self.blobs {
-            let noise_x = self.prng.next_f32_signed();
-            let noise_y = self.prng.next_f32_signed();
-            step_blob(blob, &self.params, dt_effective, (noise_x, noise_y));
+        // Advance surface ripple waves and decay beat envelope using real frame dt so visual
+        // ripples stay crisp even at slow playback speeds.
+        if !self.ripple_waves.is_empty() {
+            for wave in &mut self.ripple_waves {
+                wave.age += dt_clamped;
+            }
+            self.ripple_waves.retain(|w| w.age < w.max_age);
+        }
+        if self.audio_beat_envelope > 0.0 && dt_clamped > 0.0 {
+            self.audio_beat_envelope *= (-dt_clamped / Self::AUDIO_BEAT_DECAY_TAU).exp();
+            if self.audio_beat_envelope < 1e-3 {
+                self.audio_beat_envelope = 0.0;
+            }
+        }
+
+        // Substep physics whenever speed_scale pushes dt past a stable integration step.
+        const MAX_SUBSTEP: f32 = 0.05;
+        let substeps = ((total_sim_dt / MAX_SUBSTEP).ceil() as usize).clamp(1, 8);
+        let sub_dt = total_sim_dt / substeps as f32;
+
+        for _ in 0..substeps {
+            for blob in &mut self.blobs {
+                let noise_x = self.prng.next_f32_signed();
+                let noise_y = self.prng.next_f32_signed();
+                step_blob(blob, &self.params, sub_dt, (noise_x, noise_y));
+            }
         }
     }
 
@@ -282,10 +370,16 @@ impl Simulation {
         evaluate_field(&self.blobs, px, py)
     }
 
-    /// Evaluates field intensity and temperature at `(px, py)`.
+    /// Evaluates field intensity and temperature at `(px, py)` assuming a square `1:1` viewport.
     #[inline]
     pub fn evaluate_at(&self, px: f32, py: f32) -> (f32, f32) {
         evaluate_with_temperature(&self.blobs, px, py)
+    }
+
+    /// Evaluates field intensity and temperature at `(px, py)` with isotropic aspect-ratio correction.
+    #[inline]
+    pub fn evaluate_at_aspect(&self, px: f32, py: f32, aspect_ratio: f32) -> (f32, f32) {
+        evaluate_with_temperature_aspect(&self.blobs, px, py, aspect_ratio)
     }
 
     /// Dynamically modulates physics constants and blob parameters from normalized reactive signals.
@@ -315,10 +409,10 @@ impl Simulation {
         self.reactive_noise_scale = 1.0 + audio.mid * 2.5;
 
         let dt_since_boom = self.elapsed_time - self.last_boom_time;
-        let is_spike = audio.bass >= 0.32
-            && (audio.bass - self.audio_bass_ema) >= 0.08
-            && dt_since_boom >= 0.28;
-        let is_heavy = audio.bass >= 0.68 && dt_since_boom >= 0.40;
+        let is_spike = audio.bass >= 0.24
+            && (audio.bass - self.audio_bass_ema) >= 0.06
+            && dt_since_boom >= 0.24;
+        let is_heavy = audio.bass >= 0.62 && dt_since_boom >= 0.36;
         let energy = audio.bass.max(audio.volume);
 
         if is_spike || is_heavy {
@@ -341,16 +435,26 @@ impl Simulation {
                     blob.vy = (blob.vy + dy_center * 0.9).clamp(-2.0, 2.0);
                 }
             }
-            self.set_radius_multiplier(1.32);
-        } else if energy >= 0.05 {
-            self.set_radius_multiplier(1.0 + audio.bass * 0.28 + audio.volume * 0.10);
-            let shimmer_rate = (0.04 + (audio.mid + audio.treble) * 0.06) * dt_scale;
+            self.audio_beat_envelope = self
+                .audio_beat_envelope
+                .max((0.62 + audio.bass * 0.38).min(1.0));
+            self.push_ripple_wave(RippleWave::new(
+                boom_x,
+                boom_y,
+                (0.55 + audio.bass * 0.55).min(1.1),
+            ));
+            self.set_radius_multiplier(1.0 + self.audio_beat_envelope * 0.34);
+        } else if energy >= 0.04 {
+            let sustain = (audio.bass * 0.50 + audio.volume * 0.15).min(0.60);
+            self.audio_beat_envelope = self.audio_beat_envelope.max(sustain);
+            self.set_radius_multiplier(1.0 + self.audio_beat_envelope * 0.30 + audio.volume * 0.08);
+            let shimmer_rate = (0.04 + (audio.mid + audio.treble) * 0.07) * dt_scale;
             for (i, blob) in self.blobs.iter_mut().enumerate() {
                 let wave = (self.elapsed_time * 9.0 + i as f32 * 1.3).sin();
                 blob.temperature = (blob.temperature + wave * shimmer_rate).clamp(0.0, 1.0);
             }
         } else {
-            self.set_radius_multiplier(1.0);
+            self.set_radius_multiplier(1.0 + self.audio_beat_envelope * 0.25);
         }
 
         // FPS-independent exponential moving average: alpha = 1 - exp(-dt / tau)
@@ -390,10 +494,18 @@ impl Simulation {
                 super::interaction::apply_stir(&mut self.blobs, x, y, vx, vy, radius);
             }
             super::interaction::Interaction::Ripple { intensity } => {
+                let cx = 0.15 + 0.70 * ((self.prng.next_f32_signed() + 1.0) * 0.5);
+                let cy = 0.20 + 0.60 * ((self.prng.next_f32_signed() + 1.0) * 0.5);
                 let prng = &mut self.prng;
                 super::interaction::apply_ripple(&mut self.blobs, intensity, || {
                     prng.next_f32_signed()
                 });
+                super::interaction::apply_ripple_at(&mut self.blobs, cx, cy, intensity);
+                self.push_ripple_wave(RippleWave::new(cx, cy, intensity));
+            }
+            super::interaction::Interaction::RippleAt { x, y, intensity } => {
+                super::interaction::apply_ripple_at(&mut self.blobs, x, y, intensity);
+                self.push_ripple_wave(RippleWave::new(x, y, intensity));
             }
             super::interaction::Interaction::Pressure { delta } => {
                 self.nudge_buoyancy(delta * 0.15);
@@ -765,7 +877,16 @@ mod tests {
         sim.apply_audio_signals(DT_30, &intense);
 
         assert!((sim.last_boom_time - 0.0).abs() < 1e-6);
-        assert!((sim.blobs[0].radius - base_radii[0] * 1.32).abs() < 1e-5);
+        assert!(
+            sim.beat_envelope() > 0.85,
+            "Intense bass hit must boost beat_envelope, got {}",
+            sim.beat_envelope()
+        );
+        assert!(
+            sim.blobs[0].radius > base_radii[0] * 1.25,
+            "Intense bass hit must visibly swell blob radius"
+        );
+        assert_eq!(sim.ripple_waves().len(), 1);
         assert!(sim
             .blobs
             .iter()
@@ -796,5 +917,22 @@ mod tests {
             .filter(|b| !((b.x <= 0.05 || b.x >= 0.95) && (b.y <= 0.05 || b.y >= 0.95)))
             .count();
         assert!(not_in_corners >= sim.blobs.len() / 2);
+    }
+
+    #[test]
+    fn test_compact_shrink_preserves_horizontal_distribution() {
+        let mut sim = Simulation::new(PhysicsParams::default(), 12, 1337);
+        sim.apply_compact_scales(4, 0.75, 1.0, 1.0);
+        assert_eq!(sim.blobs.len(), 4);
+        let min_x = sim.blobs.iter().map(|b| b.x).fold(f32::INFINITY, f32::min);
+        let max_x = sim
+            .blobs
+            .iter()
+            .map(|b| b.x)
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!(
+            min_x < 0.30 && max_x > 0.70,
+            "Shrunk blobs must span across chamber instead of clustering on the left (min_x={min_x}, max_x={max_x})"
+        );
     }
 }

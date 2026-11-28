@@ -65,9 +65,9 @@ pub fn create_live_audio_provider(
     device_name: Option<&str>,
     loopback: bool,
 ) -> Result<LiveAudioProvider> {
-    let ring_buffer = PcmRingBuffer::new(4096);
+    let ring_buffer = PcmRingBuffer::new(8192);
     let capture = native::NativeAudioCapture::new(ring_buffer.clone(), device_name, loopback)?;
-    let analyzer = SpectrumAnalyzer::new(capture.actual_sample_rate, 1024);
+    let analyzer = SpectrumAnalyzer::new(capture.actual_sample_rate, 2048);
     let stream_alive = capture.stream_alive();
     let source_kind = if loopback {
         AudioSourceKind::SystemAudio

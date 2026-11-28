@@ -106,11 +106,13 @@ impl ColorPalette {
         }
     }
 
-    /// Samples lava color with optional ambient furnace background glow and soft outer halo.
+    /// Samples lava color with optional ambient furnace background glow, soft outer halo,
+    /// and additive `glow_boost` (from active typing ripple crests or audio beat pulses).
     ///
     /// When `ambient_glow` is `false` (required for 1-bit Braille dot thresholding) or `gradient`
     /// is `false` (fast stepped mode), pixels below `threshold` return `self.background` exactly.
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn sample_lava_surface(
         &self,
         temp: f32,
@@ -119,18 +121,29 @@ impl ColorPalette {
         sim_y: f32,
         gradient: bool,
         ambient_glow: bool,
+        glow_boost: f32,
     ) -> Rgb {
         if !gradient || !ambient_glow {
             return self.sample_lava_stepped(temp, field_intensity, threshold, gradient);
         }
 
+        let boost = glow_boost.clamp(0.0, 1.0);
+
         // Subtle furnace light cast upward from the heated lamp base.
-        let bg = if sim_y < 0.36 {
+        let mut bg = if sim_y < 0.36 {
             let h = ((0.36 - sim_y) / 0.36).clamp(0.0, 1.0);
-            Rgb::lerp(self.background, self.bottom, h * h * 0.18)
+            Rgb::lerp(
+                self.background,
+                self.bottom,
+                (h * h * 0.18 + boost * 0.10 * h).min(0.45),
+            )
         } else {
             self.background
         };
+
+        if boost > 0.01 {
+            bg = Rgb::lerp(bg, self.middle, (boost * 0.42).min(0.55));
+        }
 
         let halo_start = threshold * 0.55;
         if field_intensity < halo_start {
@@ -142,15 +155,16 @@ impl ColorPalette {
         if field_intensity < threshold {
             let denom = (threshold - halo_start).max(1e-4);
             let halo = ((field_intensity - halo_start) / denom).clamp(0.0, 1.0);
-            return Rgb::lerp(bg, base_color, halo * halo * 0.48);
+            return Rgb::lerp(
+                bg,
+                base_color,
+                (halo * halo * 0.48 + boost * 0.22).min(0.85),
+            );
         }
 
         let edge_factor = ((field_intensity - threshold) / 0.35).clamp(0.0, 1.0);
-        Rgb::lerp(
-            Rgb::new(255, 255, 255),
-            base_color,
-            0.55 + 0.45 * edge_factor,
-        )
+        let rim_mix = (0.55 + 0.45 * edge_factor - boost * 0.15).clamp(0.35, 1.0);
+        Rgb::lerp(Rgb::new(255, 255, 255), base_color, rim_mix)
     }
 
     /// Samples the gradient based on normalized temperature, field intensity, and gradient smoothing flag.
@@ -240,16 +254,16 @@ mod tests {
         let palette = ColorPalette::default();
 
         // Ambient glow disabled (Braille/flat): pixels below threshold stay exact background
-        let no_glow_halo = palette.sample_lava_surface(0.8, 0.85, 1.0, 0.05, true, false);
+        let no_glow_halo = palette.sample_lava_surface(0.8, 0.85, 1.0, 0.05, true, false, 0.5);
         assert_eq!(no_glow_halo, palette.background);
 
         // Ambient glow enabled: halo band blends smoothly above background
-        let halo_color = palette.sample_lava_surface(0.8, 0.85, 1.0, 0.5, true, true);
+        let halo_color = palette.sample_lava_surface(0.8, 0.85, 1.0, 0.5, true, true, 0.0);
         assert_ne!(halo_color, palette.background);
 
         // Furnace glow warms the bottom background while upper empty background stays pure
-        let bottom_bg = palette.sample_lava_surface(0.5, 0.0, 1.0, 0.02, true, true);
-        let top_bg = palette.sample_lava_surface(0.5, 0.0, 1.0, 0.90, true, true);
+        let bottom_bg = palette.sample_lava_surface(0.5, 0.0, 1.0, 0.02, true, true, 0.0);
+        let top_bg = palette.sample_lava_surface(0.5, 0.0, 1.0, 0.90, true, true, 0.0);
         assert!(bottom_bg.r > palette.background.r);
         assert_eq!(top_bg, palette.background);
     }

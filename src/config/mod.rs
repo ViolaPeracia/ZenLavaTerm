@@ -1,8 +1,10 @@
 //! Configuration loading, file discovery, and defaults.
 
 pub mod schema;
+pub mod wizard;
 
 pub use schema::{AudioConfig, Config, PaletteConfig, RenderConfig, SimulationConfig};
+pub use wizard::{run_setup_wizard, WizardOutcome, WizardState};
 
 use crate::{LavaError, Result};
 use std::fs;
@@ -160,6 +162,68 @@ where
     }
 
     None
+}
+
+/// Returns the canonical path where LavaTerm should save the user's default `config.toml`,
+/// even if the file or its parent directory does not yet exist.
+pub fn default_config_write_path() -> Option<PathBuf> {
+    default_config_write_path_for_os(std::env::consts::OS, |k| std::env::var(k).ok())
+}
+
+/// Returns the canonical write path for a specific target OS using a custom env lookup.
+pub fn default_config_write_path_for_os<F>(os: &str, get_env: F) -> Option<PathBuf>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    let non_empty = |k: &str| {
+        get_env(k).and_then(|v| {
+            let trimmed = v.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(PathBuf::from(trimmed))
+            }
+        })
+    };
+
+    match os {
+        "windows" => non_empty("APPDATA")
+            .or_else(|| non_empty("USERPROFILE").map(|p| p.join("AppData").join("Roaming")))
+            .or_else(|| non_empty("XDG_CONFIG_HOME"))
+            .map(|base| base.join("lavaterm").join("config.toml")),
+        "macos" => non_empty("XDG_CONFIG_HOME")
+            .or_else(|| non_empty("HOME").map(|p| p.join("Library").join("Application Support")))
+            .map(|base| base.join("lavaterm").join("config.toml")),
+        _ => non_empty("XDG_CONFIG_HOME")
+            .or_else(|| non_empty("HOME").map(|p| p.join(".config")))
+            .map(|base| base.join("lavaterm").join("config.toml")),
+    }
+}
+
+/// Validates and saves `config` as clean TOML to `path`, creating parent directories as needed.
+pub fn save_config<P: AsRef<Path>>(path: P, config: &Config) -> Result<()> {
+    config.validate().map_err(LavaError::Config)?;
+    let path_ref = path.as_ref();
+    if let Some(parent) = path_ref.parent() {
+        fs::create_dir_all(parent).map_err(|e| {
+            LavaError::Config(format!(
+                "Failed to create config directory '{}': {e}",
+                parent.display()
+            ))
+        })?;
+    }
+    let body = toml::to_string_pretty(config)
+        .map_err(|e| LavaError::Config(format!("Failed to serialize config TOML: {e}")))?;
+    let content = format!(
+        "# ZenLavaTerm default configuration\n# Re-open interactive setup anytime with: lavaterm --config\n\n{body}"
+    );
+    fs::write(path_ref, content).map_err(|e| {
+        LavaError::Config(format!(
+            "Failed to write config file at '{}': {e}",
+            path_ref.display()
+        ))
+    })?;
+    Ok(())
 }
 
 /// Loads configuration from custom path, auto-discovered path, or defaults.

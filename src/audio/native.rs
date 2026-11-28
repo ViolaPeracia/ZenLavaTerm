@@ -184,6 +184,24 @@ impl NativeAudioCapture {
                             None,
                         )
                     }
+                    SampleFormat::I32 => {
+                        let rb = ring_buffer.clone();
+                        device.build_input_stream(
+                            config,
+                            move |data: &[i32], _| rb.push_interleaved_i32(data, channels),
+                            err_fn,
+                            None,
+                        )
+                    }
+                    SampleFormat::F64 => {
+                        let rb = ring_buffer.clone();
+                        device.build_input_stream(
+                            config,
+                            move |data: &[f64], _| rb.push_interleaved_f64(data, channels),
+                            err_fn,
+                            None,
+                        )
+                    }
                     _ => {
                         let _ = ready_tx
                             .send(Err(LavaError::Audio("Unsupported sample format".into())));

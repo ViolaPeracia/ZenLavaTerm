@@ -41,8 +41,8 @@ The library crate root is [src/lib.rs](../src/lib.rs) and the CLI binary entry p
 `audio` captures live system or microphone audio and extracts frequency bands without blocking the render loop:
 
 - **Lock-free ring buffer (`ring_buffer.rs`)**: `PcmRingBuffer` uses a single-producer, single-consumer (SPSC) model with a 64-bit Seqlock (`version: AtomicU64`) and an atomic CAS producer guard so readers obtain tear-free snapshots without blocking writers.
-- **Zero-allocation spectrum analysis (`fft.rs`)**: `SpectrumAnalyzer` pre-allocates its Hann window and FFT scratch buffers at construction so `analyze(&mut self, pcm)` performs in-place Cooley-Tukey Radix-2 FFT with zero per-frame heap allocations.
-- **Native capture, source reporting, and fallbacks (`native.rs`, `capture.rs`, `provider.rs`)**: Captures audio via `cpal` (WASAPI input or `--audio-loopback` desktop output on Windows, ALSA on Linux, CoreAudio on macOS). Idle capture buffers decay to silence after 120ms without new samples, and non-fatal stream errors (such as pause, `Xrun`, `DeviceChanged`, or `RealtimeDenied`) do not trigger synthetic fallback beats. Every provider exposes `AudioSourceKind` (`SystemAudio`, `InputDevice`, `Synthetic`) so the TUI can display an automatic fallback badge whenever capture degrades to `SyntheticAudioGenerator` (unless `--no-audio-fallback` is set).
+- **Zero-allocation spectrum analysis & Adaptive AGC (`fft.rs`)**: `SpectrumAnalyzer` pre-allocates its Hann window and FFT scratch buffers (default 2048-sample window) so `analyze(&mut self, pcm)` performs in-place Cooley-Tukey Radix-2 FFT with Parseval band RMS energy and noise-gated Adaptive Auto-Gain Control (AGC) across quiet and loud playback volumes.
+- **Native capture, source reporting, and fallbacks (`native.rs`, `capture.rs`, `provider.rs`)**: Captures audio via `cpal` (`F32`, `I16`, `U16`, `I32`, `F64`; WASAPI input or `--audio-loopback` desktop output on Windows, ALSA on Linux, CoreAudio on macOS). Idle capture buffers decay smoothly to silence between 40ms and 140ms without new samples, transient Seqlock contention holds the last verified frame instead of injecting synthetic beats, and non-fatal stream errors (such as pause, `Xrun`, `DeviceChanged`, or `RealtimeDenied`) do not trigger synthetic fallback beats. Every provider exposes `AudioSourceKind` (`SystemAudio`, `InputDevice`, `Synthetic`) so the TUI can display an automatic fallback badge whenever capture degrades to `SyntheticAudioGenerator` (unless `--no-audio-fallback` is set).
 
 ### Reactive telemetry (`src/reactive/`)
 
@@ -66,7 +66,7 @@ The library crate root is [src/lib.rs](../src/lib.rs) and the CLI binary entry p
 
 ### Input (`src/input/`)
 
-`input` translates `crossterm` keyboard and mouse events into simulation actions (`Quit`, `TogglePause`, `Reset`, `ToggleHud` via `Ctrl+i`/`Tab`, `SpeedUp`, `SlowDown`, `Ripple`, and mouse click/drag/scroll impulses). On Windows, `KeyEventKind::Release` events are filtered out so key presses do not fire twice.
+`input` translates `crossterm` keyboard and mouse events into simulation actions (`Quit` via `Esc`/`Ctrl+q`/`Ctrl+c`, `TogglePause` via `Ctrl+p`, `Reset` via `Ctrl+r`, `ToggleHud` via `Ctrl+i`/`Tab`, `SpeedUp`/`SlowDown` via `+`/`-`/arrows, localized QWERTY `Ripple` on all normal letters and `Space`, and mouse click/drag/scroll impulses). On Windows, `KeyEventKind::Release` events are filtered out so key presses do not fire twice.
 
 ### Configuration, themes, and widgets (`src/config/`, `src/theme/`, `src/widget/`)
 
@@ -82,4 +82,4 @@ The library crate root is [src/lib.rs](../src/lib.rs) and the CLI binary entry p
 
 ## Verification and benchmarks
 
-The automated test suite contains 178 tests (150 unit tests and 28 integration tests) verified via `cargo test`, alongside headless checks (`cargo run -- --headless --frames 30`) and platform smoke scripts (`scripts/smoke_test.py` on Linux and `scripts/smoke_test_windows.ps1` on Windows). Criterion micro-benchmark measurements for field evaluation, rasterization, renderers, FFT, and Seqlock ring buffer contention are recorded in [benchmark_baseline.md](benchmarks/benchmark_baseline.md).
+The automated test suite contains 187 tests (157 unit tests and 30 integration tests) verified via `cargo test`, alongside headless checks (`cargo run -- --headless --frames 30`) and platform smoke scripts (`scripts/smoke_test.py` on Linux and `scripts/smoke_test_windows.ps1` on Windows). Criterion micro-benchmark measurements for field evaluation, rasterization, renderers, FFT, and Seqlock ring buffer contention are recorded in [benchmark_baseline.md](benchmarks/benchmark_baseline.md).

@@ -151,8 +151,11 @@ def run_in_pty(extra_args=None, terminate_via="q", timeout=5.0):
         assert total_bytes >= 10000, f"Expected >= 10,000 bytes of rendered frames, got {total_bytes}"
 
         if terminate_via == "q":
-            print("Sending 'q' keystroke to quit...")
-            os.write(master, b"q")
+            print("Sending Esc keystroke to quit...")
+            os.write(master, b"\x1b")
+        elif terminate_via == "ctrl_q":
+            print("Sending Ctrl+Q keystroke to quit...")
+            os.write(master, b"\x11")
         elif terminate_via == "SIGINT":
             print("Sending SIGINT signal...")
             os.kill(pid, signal.SIGINT)
