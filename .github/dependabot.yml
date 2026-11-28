@@ -9,6 +9,10 @@ updates:
       time: "03:00"
       timezone: "Etc/UTC"
     open-pull-requests-limit: 5
+    groups:
+      cargo-dependencies:
+        patterns:
+          - "*"
     labels:
       - "dependencies"
       - "rust"
@@ -24,6 +28,10 @@ updates:
       time: "03:00"
       timezone: "Etc/UTC"
     open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns:
+          - "*"
     labels:
       - "dependencies"
       - "ci"
