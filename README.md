@@ -11,13 +11,14 @@ LavaTerm (`lavaterm`) is a terminal-native ambient lava lamp and metaball visual
 
 ## Features
 
-- Continuous 2D metaball simulation with thermal buoyancy, viscous damping, boundary reflections, undulating molten bottom pool, and soft ambient edge glow.
+- Continuous 2D metaball simulation with compact-support falloff, thermal buoyancy, convective swirl, volumetric 3D wax shading, soft ambient glow, and area-preserving aspect-ratio scaling.
 - Three terminal renderers: `halfblock` (default), `block`, and `braille` (`U+2800`..`U+28FF`).
 - 12 built-in theme presets (`lava`, `ocean`, `cyberpunk`, `synthwave`, `nord`, `forest`, `monochrome`, `matrix`, `sunset`, `dracula`, `catppuccin`, `tokyo-night`), plus `auto`, `pywal`, `wallust`, and custom JSON or TOML palettes.
+- Interactive first-run and `--config` keyboard setup wizard for saving default settings cleanly to `config.toml`.
 - System telemetry mode (`--system`) mapping CPU, RAM, and battery state to fluid dynamics.
-- FFT audio mode (`--audio`) mapping bass, mid, and treble bands, with Windows WASAPI desktop loopback (`--audio-loopback`) and optional strict capture (`--no-audio-fallback`).
-- Display modes for full-screen, `--compact`, `--widget` (15 FPS), `--inline`, `--snapshot`, and `--headless`, plus a toggleable 1-line status HUD (`Ctrl+i` / `Tab`).
-- Mouse and keyboard interaction for shockwaves, fluid stirring, thermal pulses, and buoyancy control.
+- FFT audio mode (`--audio`) with noise-gated Adaptive AGC and Parseval band RMS, Windows WASAPI desktop loopback (`--audio-loopback`), and optional strict capture (`--no-audio-fallback`).
+- Display modes for full-screen (with `OSC 11/111` & Synchronized Output), `--compact`, `--widget` (15 FPS), `--inline`, `--snapshot`, and `--headless`, plus a fading bordered top-left status HUD (`Ctrl+i` / `Tab`).
+- Mouse and full-keyboard interaction for shockwaves, fluid stirring, thermal pulses, and expanding surface ripple waves on every typed character and `Space`.
 
 ## Requirements
 

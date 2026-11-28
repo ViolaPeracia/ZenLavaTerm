@@ -32,9 +32,9 @@ The library crate root is [src/lib.rs](../src/lib.rs) and the CLI binary entry p
 
 `core` implements the metaball physics and scalar field math:
 
-- **Scalar field (`field.rs`)**: Evaluates metaball potential summation and weighted temperature across normalized 2D coordinates with loop-invariant hoisting.
-- **Simulation (`simulation.rs`)**: Steps blob positions, thermal buoyancy, viscosity drag, and user or audio impulses. Audio reactions use frame-rate-independent (`dt`-normalized) EMA bass smoothing, edge-detonated bass shockwaves with inward rebound, soft-music radius and temperature shimmer, and `sqrt(dt)` treble jitter.
-- **User baseline & compact preservation**: `Simulation::base_params()`, `Simulation::set_base_params()`, `Simulation::apply_compact_scales()`, `Simulation::nudge_buoyancy()`, and `Simulation::reset()` keep configured `[simulation]` parameters, dynamic compact resize profiles, and keyboard speed offsets intact across reactive polls and terminal resizes.
+- **Scalar field (`field.rs`)**: Evaluates metaball potential summation and weighted temperature across normalized 2D coordinates with area-preserving isotropic aspect scaling `(sqrt(aspect), 1/sqrt(aspect))` and compact-support metaball falloff (`d < 2.2 * r`) so 10–32 droplets stay distinct without far-field clumping.
+- **Simulation (`simulation.rs`)**: Steps blob positions, thermal buoyancy, 2D convective swirl with soft inter-blob separation, viscosity drag, user `speed_scale` (`0.25x..4.0x` with safe sub-stepping), expanding `RippleWave` surface rings, and audio impulses. Audio reactions use frame-rate-independent (`dt`-normalized) EMA bass smoothing, edge-detonated bass shockwaves with inward rebound, smoothly decaying `audio_beat_envelope` radius/glow breathing, soft-music temperature shimmer, and `sqrt(dt)` treble jitter.
+- **User baseline & compact preservation**: `Simulation::base_params()`, `Simulation::set_base_params()`, `Simulation::apply_compact_scales()` (with spatially uniform subsampling when shrinking), `Simulation::nudge_buoyancy()`, `Simulation::nudge_speed()`, and `Simulation::reset()` keep configured `[simulation]` parameters, dynamic compact resize profiles, and user offsets intact across reactive polls and terminal resizes.
 
 ### Audio pipeline (`src/audio/`)
 
@@ -57,12 +57,12 @@ The library crate root is [src/lib.rs](../src/lib.rs) and the CLI binary entry p
 
 `render` discretizes the scalar field into a 2D pixel buffer and encodes ANSI output:
 
-- **Virtual framebuffer & rasterizer (`framebuffer.rs`, `mod.rs`, `color.rs`)**: Holds a contiguous RGB grid and maps field potential and temperature through `RasterizeOptions` (`threshold`, `gradient`, `ambient_glow`, `molten_pool`). Adds an undulating molten bottom heat pool and soft edge halo/furnace glow while automatically disabling ambient glow for 1-bit `braille` and stepped color modes to keep silhouettes sharp.
+- **Virtual framebuffer & rasterizer (`framebuffer.rs`, `mod.rs`, `color.rs`)**: Holds a contiguous RGB grid and maps field potential and temperature through `RasterizeOptions` (`threshold`, `gradient`, `ambient_glow`, `molten_pool`, `aspect_ratio`). Uses physically-inspired volumetric wax shading (deep curved rim, theme-faithful glowing core, bottom bulb under-lighting, expanding ripple wave crests, and optional `molten_pool`) while automatically disabling ambient glow for 1-bit `braille` and stepped color modes to keep silhouettes sharp.
 - **Sub-cell encoders (`halfblock.rs`, `block.rs`, `braille.rs`)**:
   - `HalfBlockRenderer`: Packs two vertical pixels per cell using `▀` (2x vertical resolution).
   - `BlockRenderer`: Maps one pixel per character cell using `█`.
   - `BrailleRenderer`: Maps a 2x4 subpixel dot matrix per cell using `U+2800`..`U+28FF`.
-- **Cursor modes, inline tracking, and cleanup**: Renderers support `CursorMode::{Absolute, Inline, Stream}` (where `Stream` emits LF-only rows for snapshot/piping, and `Inline` tracks `last_rendered_rows`, emits `\x1b[K` per row, and clears leftover lines with `\x1b[J` when shrinking). `TerminalGuard` provides RAII cleanup in `run_event_loop` to restore raw mode, alternate screen, mouse capture, and cursor visibility on exit or early error.
+- **Cursor modes, Synchronized Output, HUD & cleanup**: Renderers support `CursorMode::{Absolute, Inline, Stream}` (where `Stream` emits LF-only rows for snapshot/piping, and `Inline` tracks `last_rendered_rows`, emits `\x1b[K` per row, and clears leftover lines with `\x1b[J` when shrinking). Interactive frames wrap rendering and the alpha-blended, rounded-border top-left HUD (`Ctrl+i` / `Tab`, supported in both fullscreen and inline via `\x1b7`/`\x1b8`) in Synchronized Output (`\x1b[?2026h…l`) with a 256 KB write buffer to eliminate HUD flicker. Fullscreen mode also disables line-wrap (`\x1b[?7l`) and syncs native terminal padding via `OSC 11/111`, restored cleanly by RAII `TerminalGuard` on exit or panic.
 
 ### Input (`src/input/`)
 
@@ -70,7 +70,7 @@ The library crate root is [src/lib.rs](../src/lib.rs) and the CLI binary entry p
 
 ### Configuration, themes, and widgets (`src/config/`, `src/theme/`, `src/widget/`)
 
-- **`config`**: Parses TOML configuration from XDG, `%APPDATA%`, or macOS Application Support paths, rejects unknown keys via `#[serde(deny_unknown_fields)]` with file-path diagnostics, validates bounds (such as `target_fps` and `widget` dimensions), and supports legacy field names through Serde `#[serde(alias = ...)]` attributes. See [configuration.md](configuration.md) for the schema.
+- **`config`**: Parses and saves TOML configuration (`load_config`, `save_config`) from XDG, `%APPDATA%`, or macOS Application Support paths, provides the flicker-free interactive keyboard setup wizard (`wizard.rs`, opened on first bare run or via `lavaterm --config` / `--setup`), rejects unknown keys via `#[serde(deny_unknown_fields)]` with file-path diagnostics, validates bounds (such as `target_fps` and `widget` dimensions), and supports legacy field names through Serde `#[serde(alias = ...)]` attributes. See [configuration.md](configuration.md) for the schema.
 - **`theme`**: Provides built-in color palettes, custom palette loading, and Pywal/Wallust JSON cache integration.
 - **`widget`**: Supports terminal multiplexers (tmux, zellij) and scriptable output via `CompactScaler` (recomputed dynamically on `Event::Resize`), mode-scoped `resolve_policy` (isolating `[widget]` TOML keys from normal interactive sessions), and `render_snapshot_options` (`--snapshot`).
 

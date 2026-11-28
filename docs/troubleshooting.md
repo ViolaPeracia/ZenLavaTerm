@@ -8,19 +8,19 @@ List available input and loopback devices before debugging audio-reactive mode:
 lavaterm --list-audio-devices
 ```
 
-If no default capture device is available or initialization fails, LavaTerm falls back to `SyntheticAudioGenerator` and displays an automatic `[audio: synthetic fallback]` badge in the bottom-right corner so you know it is not reacting to live audio. Press `Ctrl+i` (or `Tab`) at any time to toggle the 1-line status HUD showing the active audio source (`System Audio`, `Input Device`, or `Synthetic`). Pass `--no-audio-fallback` to fail fast instead of falling back.
+If no default capture device is available or initialization fails, LavaTerm falls back to `SyntheticAudioGenerator` and displays an automatic `[audio: synthetic fallback]` badge in the bottom-right corner so you know it is not reacting to live audio. Press `Ctrl+i` (or `Tab`) at any time to display the fading bordered top-left status HUD showing the active audio source (`System Audio`, `Input Device`, or `Synthetic`). Pass `--no-audio-fallback` to fail fast instead of falling back.
 
 Specifying `--audio-device <NAME>` or `--audio-loopback` automatically enables audio mode and fails fast if the requested device does not exist or loopback is unavailable on your OS.
 
 ### Windows WASAPI loopback
 
-On Windows, desktop audio output capture is supported natively via WASAPI loopback:
+On Windows, desktop audio output capture is supported natively via WASAPI loopback (supporting `F32`, `I16`, `U16`, `I32`, and `F64` endpoints with Adaptive Auto-Gain Control across quiet and loud playback volumes):
 
 ```bash
 lavaterm --audio-loopback
 ```
 
-When desktop audio stops playing, WASAPI loopback buffers decay to silence after roughly 120ms. Pausing media or encountering a non-fatal stream pause does not trigger synthetic fallback, so the simulation settles cleanly until playback resumes.
+When desktop audio stops playing, WASAPI loopback buffers decay smoothly to silence between 40ms and 140ms. Pausing media or encountering a non-fatal stream pause does not trigger synthetic fallback, so the simulation settles cleanly until playback resumes. If you switch default output devices (such as unplugging headphones) mid-session, WASAPI invalidates the active stream and LavaTerm transitions to the synthetic fallback badge — restart `lavaterm --audio-loopback` to bind to the new device.
 
 ### Linux ALSA & PipeWire / PulseAudio monitors
 
