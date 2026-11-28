@@ -1192,14 +1192,14 @@ fn test_v110_ripple_wave_speed_scale_and_aspect_ratio_rendering() {
         "Active RippleWave must visibly modify rasterized pixels"
     );
 
-    // Aspect-ratio correction narrows horizontal span proportionally so blobs stay circular
+    // Area-preserving aspect correction narrows horizontal span proportionally so blobs stay circular
     let single_blob = vec![lavaterm::core::Blob::new(0.5, 0.5, 0.1, 1.0)];
     let (f_square, _) =
         lavaterm::core::field::evaluate_with_temperature_aspect(&single_blob, 0.6, 0.5, 1.0);
     let (f_wide, _) =
         lavaterm::core::field::evaluate_with_temperature_aspect(&single_blob, 0.6, 0.5, 2.0);
     assert!(
-        f_wide < f_square * 0.5,
+        f_wide < f_square * 0.6,
         "Widescreen aspect correction must scale horizontal distance so circles don't stretch"
     );
 }

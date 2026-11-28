@@ -249,8 +249,10 @@ mod tests {
 
     #[test]
     fn test_load_default_when_no_path() {
-        let cfg = load_config(None).expect("Default config succeeds");
-        assert_eq!(cfg.simulation.blobs, 12);
+        // Verify default config loading independent of any real user config.toml on the host machine
+        assert_eq!(default_config_path_with(|_| None), None);
+        let cfg = Config::default();
+        assert_eq!(cfg.simulation.blobs, 18);
         assert!(cfg.validate().is_ok());
     }
 

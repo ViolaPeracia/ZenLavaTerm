@@ -27,7 +27,7 @@ The sample below lists every table and key with its built-in default and valid r
 
 ```toml
 [simulation]
-blobs = 12                    # 1..=128
+blobs = 18                    # 1..=128
 gravity = 0.12                # 0.0..=5.0
 buoyancy = 0.80               # 0.0..=5.0
 viscosity = 0.93              # 0.0..=1.0

@@ -611,7 +611,7 @@ fn run_event_loop(
     terminal::enable_raw_mode()?;
     guard.raw_mode = true;
 
-    let mut out = BufWriter::with_capacity(64 * 1024, stdout());
+    let mut out = BufWriter::with_capacity(256 * 1024, stdout());
 
     if is_fullscreen {
         execute!(out, EnterAlternateScreen, cursor::Hide)?;
@@ -779,6 +779,9 @@ fn run_event_loop(
 
             rasterize_simulation(&sim, &mut fb, &palette, &opts.raster_opts);
 
+            // Wrap lava frame + HUD overlay in Synchronized Output (DEC 2026) so the terminal
+            // presents both in a single atomic swap with zero HUD strobe/flicker.
+            out.write_all(b"\x1b[?2026h")?;
             renderer
                 .render(&fb, &mut out)
                 .map_err(|e| LavaError::Render(e.to_string()))?;
@@ -799,6 +802,7 @@ fn run_event_loop(
                 active_audio_source,
             )?;
 
+            out.write_all(b"\x1b[?2026l")?;
             out.flush()?;
 
             let elapsed = now.elapsed();

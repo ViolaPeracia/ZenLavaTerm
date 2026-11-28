@@ -79,7 +79,7 @@ impl VisualFxChoice {
 
 const RENDERERS: [&str; 3] = ["halfblock", "block", "braille"];
 const FPS_OPTIONS: [u32; 4] = [24, 30, 45, 60];
-const BLOB_OPTIONS: [usize; 5] = [6, 8, 10, 12, 16];
+const BLOB_OPTIONS: [usize; 5] = [10, 14, 18, 24, 32];
 const TOTAL_ROWS: usize = 9; // 7 settings + Save button + Launch-once button
 
 /// Pure keyboard-driven state machine for the interactive configuration wizard.

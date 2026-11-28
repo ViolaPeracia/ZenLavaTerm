@@ -117,19 +117,21 @@ impl Simulation {
         let mut blobs = Vec::with_capacity(count);
         for i in 0..count {
             let frac = (i as f32 + 0.5) / count as f32;
-            let x = 0.12 + 0.76 * frac;
-            let is_bottom = i % 2 == 0;
-            let y = if is_bottom {
-                0.12 + 0.12 * prng.next_f32_signed()
-            } else {
-                0.82 + 0.12 * prng.next_f32_signed()
+            let x = (0.08 + 0.84 * frac + 0.04 * prng.next_f32_signed()).clamp(0.06, 0.94);
+            // Distribute across bottom, middle, and top layers so the chamber feels lush immediately
+            let (y, temp) = match i % 3 {
+                0 => (0.14 + 0.14 * prng.next_f32_signed().abs(), 0.88),
+                1 => (
+                    0.40 + 0.22 * prng.next_f32_signed(),
+                    0.52 + 0.22 * prng.next_f32_signed(),
+                ),
+                _ => (0.76 + 0.14 * prng.next_f32_signed().abs(), 0.14),
             };
-            let temp = if is_bottom { 0.90 } else { 0.10 };
-            let radius = 0.072 + 0.036 * (prng.next_f32_signed().abs());
+            let radius = 0.085 + 0.045 * (prng.next_f32_signed().abs());
 
-            let mut blob = Blob::new(x, y, radius, temp);
-            blob.vx = prng.next_f32_signed() * 0.05;
-            blob.vy = prng.next_f32_signed() * 0.05;
+            let mut blob = Blob::new(x, y, radius, temp.clamp(0.05, 0.95));
+            blob.vx = prng.next_f32_signed() * 0.14;
+            blob.vy = prng.next_f32_signed() * 0.08;
             blobs.push(blob);
         }
         let base_radii = blobs.iter().map(|b| b.radius).collect();
@@ -354,9 +356,47 @@ impl Simulation {
         const MAX_SUBSTEP: f32 = 0.05;
         let substeps = ((total_sim_dt / MAX_SUBSTEP).ceil() as usize).clamp(1, 8);
         let sub_dt = total_sim_dt / substeps as f32;
+        let flow_time = self.elapsed_time;
 
         for _ in 0..substeps {
-            for blob in &mut self.blobs {
+            // Smooth 2D convective swirl & soft lateral blob deflection so lava weaves
+            // organically across the screen instead of bouncing straight up and down.
+            let n = self.blobs.len();
+            for i in 0..n {
+                let bx = self.blobs[i].x;
+                let by = self.blobs[i].y;
+                let phase = i as f32 * 0.91;
+
+                // Curl-like thermal convection rolls (creates sweeping S-curves and eddies)
+                let swirl_x = 0.24
+                    * (by * std::f32::consts::TAU + flow_time * 0.55 + phase * 0.3).sin()
+                    + 0.14 * (bx * std::f32::consts::PI * 2.5 - flow_time * 0.35).cos();
+                let swirl_y =
+                    0.10 * (bx * std::f32::consts::TAU - flow_time * 0.45 + phase * 0.2).cos();
+
+                // Soft tangential deflection when blobs pass close so they orbit instead of stacking
+                let mut deflect_x = 0.0f32;
+                let mut deflect_y = 0.0f32;
+                for (j, other) in self.blobs.iter().enumerate() {
+                    if i == j {
+                        continue;
+                    }
+                    let dx = bx - other.x;
+                    let dy = by - other.y;
+                    let d_sq = dx * dx + dy * dy;
+                    if d_sq > 1e-5 && d_sq < 0.028 {
+                        let inv_d = 1.0 / d_sq.sqrt();
+                        let weight = (1.0 - d_sq / 0.028) * 0.16;
+                        // Blend gentle separation with slight perpendicular swirl
+                        deflect_x += (dx * inv_d * 0.7 - dy * inv_d * 0.45) * weight;
+                        deflect_y += (dy * inv_d * 0.5 + dx * inv_d * 0.45) * weight;
+                    }
+                }
+
+                let blob = &mut self.blobs[i];
+                blob.vx = (blob.vx + (swirl_x + deflect_x) * sub_dt).clamp(-2.0, 2.0);
+                blob.vy = (blob.vy + (swirl_y + deflect_y) * sub_dt).clamp(-2.0, 2.0);
+
                 let noise_x = self.prng.next_f32_signed();
                 let noise_y = self.prng.next_f32_signed();
                 step_blob(blob, &self.params, sub_dt, (noise_x, noise_y));

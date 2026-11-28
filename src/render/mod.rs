@@ -119,11 +119,8 @@ pub fn rasterize_simulation(
     let use_pool = options.molten_pool && height >= 6;
     let t = sim.elapsed_time;
     let aspect = options.aspect_ratio.clamp(0.25, 4.0);
-    let (scale_x, scale_y) = if aspect >= 1.0 {
-        (aspect, 1.0)
-    } else {
-        (1.0, 1.0 / aspect)
-    };
+    let scale_x = aspect.sqrt();
+    let scale_y = 1.0 / scale_x;
     let ripples = sim.ripple_waves();
     let beat_glow = sim.beat_envelope() * 0.25;
 

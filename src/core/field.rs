@@ -30,10 +30,12 @@ pub fn evaluate_with_temperature(blobs: &[Blob], px: f32, py: f32) -> (f32, f32)
     evaluate_with_temperature_aspect(blobs, px, py, 1.0)
 }
 
-/// Evaluates field intensity and weighted temperature with isotropic aspect-ratio correction.
+/// Evaluates field intensity and weighted temperature with area-preserving isotropic
+/// aspect-ratio correction.
 ///
 /// `aspect_ratio` is `physical_width / physical_height` (e.g. `~1.8` on a widescreen terminal).
-/// Scaling the wider axis keeps metaballs visually circular instead of stretched horizontally.
+/// Scaling by `(sqrt(aspect), 1 / sqrt(aspect))` keeps metaballs visually circular while
+/// preserving constant screen coverage across square, widescreen, and tall viewports.
 #[inline]
 pub fn evaluate_with_temperature_aspect(
     blobs: &[Blob],
@@ -42,11 +44,8 @@ pub fn evaluate_with_temperature_aspect(
     aspect_ratio: f32,
 ) -> (f32, f32) {
     let aspect = aspect_ratio.clamp(0.25, 4.0);
-    let (scale_x, scale_y) = if aspect >= 1.0 {
-        (aspect, 1.0)
-    } else {
-        (1.0, 1.0 / aspect)
-    };
+    let scale_x = aspect.sqrt();
+    let scale_y = 1.0 / scale_x;
 
     let mut total_field = 0.0;
     let mut weighted_temp = 0.0;

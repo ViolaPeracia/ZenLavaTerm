@@ -164,7 +164,7 @@ pub struct SimulationConfig {
 impl Default for SimulationConfig {
     fn default() -> Self {
         Self {
-            blobs: 12,
+            blobs: 18,
             gravity: 0.12,
             buoyancy: 0.80,
             viscosity: 0.93,
@@ -472,7 +472,7 @@ mod tests {
     fn test_default_config_validity() {
         let config = Config::default();
         assert!(config.validate().is_ok());
-        assert_eq!(config.simulation.blobs, 12);
+        assert_eq!(config.simulation.blobs, 18);
         assert_eq!(config.render.fps, 30);
         assert!(!config.reactive.enabled);
         assert!(!config.audio.enabled);
