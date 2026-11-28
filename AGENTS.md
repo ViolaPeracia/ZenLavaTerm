@@ -8,7 +8,7 @@
 
 - **Project**: ZenLavaTerm (crate and binary name: `lavaterm`)
 - **Language & Edition**: Rust (Edition 2021, `rustc 1.86+`, `rust-version = "1.86"`)
-- **Current Version**: `1.1.0` (see `Cargo.toml` and `CHANGELOG.md`)
+- **Current Version**: `2.0.0` (see `Cargo.toml` and `CHANGELOG.md`)
 - **Domain**: Terminal-native ambient lava lamp and metaball visualizer.
 - **Frontend / UI Paradigm**: **Terminal-native ANSI TUI** powered by `crossterm`, virtual framebuffer rasterization, and sub-cell Unicode character packing (`▀` half-blocks, `█` full-blocks, `U+2800`..`U+28FF` Braille). **This is NOT a webview or GUI application (no Tauri, no Electron, no WebGL).**
 

@@ -1,13 +1,13 @@
 # ZenLavaTerm Current State
 
 > **Last Updated**: 2026-11-28
-> **Current Version**: `1.1.0` (see `Cargo.toml` and `CHANGELOG.md`)
+> **Current Version**: `2.0.0` (see `Cargo.toml` and `CHANGELOG.md`)
 
 ---
 
 ## 1. Release & Codebase Status
 
-- **Crate Version**: `1.1.0` (`rust-version = "1.86"`)
+- **Crate Version**: `2.0.0` (`rust-version = "1.86"`)
 - **Git Branch**: `feat/v1.1.0-visuals-and-audit`
 - **Active Test Suite**:
   - Unit tests: **157 passed**, 0 failed

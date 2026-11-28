@@ -42,7 +42,7 @@ When a valid release tag is pushed, `release.yml` builds and publishes:
 
 Each platform job writes a `.sha256` sidecar file. In `package.yml`, Linux packages are verified end-to-end with `scripts/smoke_test.py --require-packages` (including extracted DEB and AppImage PTY runs) and Windows MSI installers are tested with silent `msiexec /i` install, execution, and `/x` uninstall checks. The release job verifies every artifact against its sidecar, generates a combined `SHA256SUMS.txt`, enforces SLSA build provenance via `actions/attest-build-provenance`, updates Homebrew and AUR manifests, and publishes the GitHub Release with `softprops/action-gh-release` (`v3.0.4`).
 
-> **Note**: macOS-specific runtime/packaging follow-ups (CoreAudio minimum version alignment, battery telemetry, and Finder launch verification) are tracked separately and deferred from `v1.1.0`.
+> **Note**: macOS-specific runtime/packaging follow-ups (CoreAudio minimum version alignment, battery telemetry, and Finder launch verification) are tracked separately and deferred from `v2.0.0`.
 
 ## Release checklist
 

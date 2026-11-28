@@ -1066,7 +1066,7 @@ fn test_cli_validation_rejects_invalid_arguments() {
 }
 
 #[test]
-fn test_v110_widget_toml_isolated_from_normal_mode() {
+fn test_v200_widget_toml_isolated_from_normal_mode() {
     use lavaterm::widget::{resolve_policy, ExecutionMode, PolicyInput};
 
     let input = PolicyInput {
@@ -1087,7 +1087,7 @@ fn test_v110_widget_toml_isolated_from_normal_mode() {
 }
 
 #[test]
-fn test_v110_inline_height_shrink_and_stream_lf_contract() {
+fn test_v200_inline_height_shrink_and_stream_lf_contract() {
     use lavaterm::render::CursorMode;
 
     let palette = ColorPalette::default();
@@ -1124,7 +1124,7 @@ fn test_v110_inline_height_shrink_and_stream_lf_contract() {
 }
 
 #[test]
-fn test_v110_config_rejects_unknown_field_with_file_path() {
+fn test_v200_config_rejects_unknown_field_with_file_path() {
     use lavaterm::config::load_from_path;
     use std::fs;
 
@@ -1144,7 +1144,7 @@ fn test_v110_config_rejects_unknown_field_with_file_path() {
 }
 
 #[test]
-fn test_v110_audio_loopback_auto_enables_audio_flag() {
+fn test_v200_audio_loopback_auto_enables_audio_flag() {
     use std::process::Command;
 
     let bin = env!("CARGO_BIN_EXE_lavaterm");
@@ -1178,7 +1178,7 @@ fn test_v110_audio_loopback_auto_enables_audio_flag() {
 }
 
 #[test]
-fn test_v110_ripple_wave_speed_scale_and_aspect_ratio_rendering() {
+fn test_v200_ripple_wave_speed_scale_and_aspect_ratio_rendering() {
     use lavaterm::core::Interaction;
 
     let palette = ColorPalette::default();
@@ -1228,7 +1228,7 @@ fn test_v110_ripple_wave_speed_scale_and_aspect_ratio_rendering() {
 }
 
 #[test]
-fn test_v110_save_config_roundtrip_and_i32_f64_pcm() {
+fn test_v200_save_config_roundtrip_and_i32_f64_pcm() {
     use lavaterm::audio::{PcmRingBuffer, SpectrumAnalyzer};
     use lavaterm::config::{load_from_path, save_config};
 
