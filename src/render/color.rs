@@ -158,13 +158,35 @@ impl ColorPalette {
             return Rgb::lerp(
                 bg,
                 base_color,
-                (halo * halo * 0.48 + boost * 0.22).min(0.85),
+                (halo * halo * 0.42 + boost * 0.22).min(0.82),
             );
         }
 
-        let edge_factor = ((field_intensity - threshold) / 0.35).clamp(0.0, 1.0);
-        let rim_mix = (0.55 + 0.45 * edge_factor - boost * 0.15).clamp(0.35, 1.0);
-        Rgb::lerp(Rgb::new(255, 255, 255), base_color, rim_mix)
+        // Physically-inspired volumetric wax shading:
+        // - Bottom bulb softly under-lights lower droplets toward `self.bottom`.
+        // - Outer rim deepens slightly for curved 3D volume (no inverted white outline).
+        // - Deep core glows with theme-faithful subsurface scattering / incandescence.
+        let bulb = (1.0 - sim_y).clamp(0.0, 1.0);
+        let bulb_sq = bulb * bulb;
+        let lit_base = Rgb::lerp(base_color, self.bottom, bulb_sq * 0.24);
+
+        let depth = ((field_intensity - threshold) / (threshold * 1.4)).clamp(0.0, 1.0);
+        let shaded = if depth < 0.28 {
+            let rim_t = (1.0 - depth / 0.28) * 0.22;
+            Rgb::lerp(lit_base, self.background, rim_t)
+        } else {
+            lit_base
+        };
+
+        let core_norm = ((depth - 0.15) / 0.85).clamp(0.0, 1.0);
+        if core_norm <= 0.0 {
+            return shaded;
+        }
+        let core_strength =
+            (core_norm * core_norm * (0.46 + bulb_sq * 0.24 + boost * 0.24)).clamp(0.0, 0.82);
+        let hot_tint = Rgb::lerp(lit_base, self.bottom, 0.30);
+        let hot_core = Rgb::lerp(hot_tint, Rgb::new(255, 255, 255), 0.40);
+        Rgb::lerp(shaded, hot_core, core_strength)
     }
 
     /// Samples the gradient based on normalized temperature, field intensity, and gradient smoothing flag.
@@ -266,6 +288,15 @@ mod tests {
         let top_bg = palette.sample_lava_surface(0.5, 0.0, 1.0, 0.90, true, true, 0.0);
         assert!(bottom_bg.r > palette.background.r);
         assert_eq!(top_bg, palette.background);
+
+        // Volumetric shading: deep core must be brighter than outer rim (no inverted white outline)
+        let rim = palette.sample_lava_surface(0.7, 1.02, 1.0, 0.4, true, true, 0.0);
+        let core = palette.sample_lava_surface(0.7, 2.6, 1.0, 0.4, true, true, 0.0);
+        let luma = |c: Rgb| c.r as u32 + c.g as u32 + c.b as u32;
+        assert!(
+            luma(core) > luma(rim),
+            "Inner lava core ({core:?}) must glow brighter than outer rim ({rim:?})"
+        );
     }
 
     #[test]
