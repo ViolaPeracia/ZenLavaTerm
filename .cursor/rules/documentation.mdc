@@ -13,10 +13,11 @@ globs: docs/**/*.md,README.md,CHANGELOG.md,.ai/**/*.md
 
 ## 2. Mandatory Synchronization Trigger
 Update documentation in the same commit whenever:
-- CLI options, flags, or default parameters in `src/main.rs` change -> update `docs/reference/cli.md` and `README.md`.
-- Configuration schemas or defaults in `src/config/` change -> update `docs/reference/configuration.md` and `docs/configuration.md`.
-- Architecture, module boundaries, or thread models change -> update `docs/architecture/`.
-- Packaging or CI workflows change -> update `docs/operations/`.
+- CLI options, flags, or default parameters in `src/main.rs` change -> update `README.md` and `docs/README.md`.
+- Configuration schemas or defaults in `src/config/` change -> update `docs/configuration.md`.
+- Architecture, module boundaries, or thread models change -> update `docs/architecture.md`.
+- Packaging or CI workflows change -> update `docs/releasing.md`.
+- Troubleshooting steps or platform caveats change -> update `docs/troubleshooting.md`.
 - Release versions change -> update `Cargo.toml`, `CHANGELOG.md`, and `.ai/context/current-state.md`.
 
 ## 3. Style & Accuracy Invariants

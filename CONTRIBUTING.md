@@ -1,74 +1,41 @@
 # Contributing to LavaTerm
 
-Thank you for your interest in contributing to **LavaTerm**!
+Contributions are welcome. Keep changes focused, preserve the module boundaries, and verify all checks locally before opening a pull request.
 
-LavaTerm is built with a production-minded, clean-architecture approach in Rust. We value correctness, clear domain boundaries, beautiful terminal aesthetics, and maintainable code over quick hacks.
+## Development setup
 
----
+- Rust 1.85+ (`rustup default stable`)
+- `rustfmt` and `clippy` (`rustup component add rustfmt clippy`)
+- Linux only: `libasound2-dev` and `pkg-config` for ALSA audio capture
 
-## Development Setup
+## Validation
 
-### Requirements
-
-- **Rust 1.75+** (`rustup default stable`)
-- `rustfmt` and `clippy` components (`rustup component add rustfmt clippy`)
-- A modern True-Color terminal emulator (Kitty, Alacritty, WezTerm, Ghostty, etc.)
-
-### Build and Test
+Run these commands after making changes:
 
 ```bash
-# Check code formatting
 cargo fmt --check
-
-# Run linter with strict warning checks
 cargo clippy --all-targets --all-features -- -D warnings
-
-# Run all unit and integration tests
 cargo test
-
-# Run the project in development mode
-cargo run
-
-# Run headless simulation test
 cargo run -- --headless --frames 30
 ```
 
----
+## Workflow
 
-## Contribution Workflow
-
-1. **Find or Open an Issue**: Check existing issues or open a new one following the issue templates and the full checklist in `docs/issue_creation_checklist.md`. Every feature or bug fix should correspond to an issue with clear acceptance criteria.
-2. **Branch Naming**:
-   - `feat/<feature-name>`
-   - `fix/<bug-name>`
+1. Create a branch using one of these prefixes:
+   - `feat/<name>`
+   - `fix/<name>`
    - `refactor/<scope>`
    - `docs/<topic>`
-3. **Commit Messages**: Follow Conventional Commits format:
+2. Write commit messages using Conventional Commits:
    ```text
-   feat(core): implement scalar field evaluation
-   fix(render): correct halfblock vertical cell index
-   test(physics): add buoyancy damping test case
-   docs: update simulation math formulas
+   feat(core): add thermal pulse decay
+   fix(render): clamp braille cell bounds
+   docs: update troubleshooting steps
    ```
-4. **Code Quality Standards**:
-   - Do not import terminal/TTY dependencies (e.g. `crossterm`) into the `core` simulation module.
-   - Do not use `unwrap()` in production paths; use typed errors (`Result<T, LavaError>`).
-   - Write unit tests for new physics, math, color, or configuration logic.
-   - Run `cargo fmt` and `cargo clippy` before submitting (or let `autofix.ci` automatically format and apply fixes on pull requests).
-5. **Open a Pull Request**: Fill out the PR template completely and ensure all CI checks pass. Any formatting or auto-fixable linter warnings will be automatically resolved by `autofix.ci`.
+3. Open a pull request against `main`. Note that `autofix.ci` runs on pull requests to apply formatting and lint fixes automatically.
 
----
+## Architecture and rules
 
-## Architecture Boundaries
-
-Always respect the unidirectional data flow:
-```text
-Signals / Inputs -> Simulation Core -> Virtual Framebuffer -> Renderer -> Terminal Backend
-```
-
-- **Core**: Pure math and physics. Deterministic, zero terminal I/O.
-- **Render**: Virtual canvas and color transformation to ANSI/Unicode primitives.
-- **Config**: Parses TOML configurations into validated configuration structs.
-- **Terminal Backend**: Handles raw mode, alternate screen, and flushes batched ANSI buffers to stdout.
-
-Thank you for helping make LavaTerm amazing!
+- Keep `src/core/` pure: do not import `crossterm`, OS telemetry, or audio APIs there.
+- Return `Result<T, LavaError>` on runtime paths; do not use `unwrap()`, `expect()`, or `panic!()` in production code.
+- See [docs/architecture.md](docs/architecture.md) for the data pipeline and [AGENTS.md](AGENTS.md) for repository-wide rules and validation requirements.

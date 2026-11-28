@@ -17,7 +17,7 @@ cargo fmt --check
 # Strict lint check (must have 0 warnings)
 cargo clippy --all-targets --all-features -- -D warnings
 
-# Run all 135 tests (unit + integration)
+# Run all 162 tests (unit + integration)
 cargo test
 
 # Run a single unit test (e.g., ring buffer coherence)

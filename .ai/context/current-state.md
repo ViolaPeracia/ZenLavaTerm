@@ -7,8 +7,8 @@
 
 ## 1. Release & Codebase Status
 
-- **Crate Version**: `1.0.1` (unreleased fixes pending for 1.0.2)
-- **Git HEAD**: `fix/v1.0.2-audit` (branched from `origin/main`, ready for v1.0.2)
+- **Crate Version**: `1.0.1` (`v1.0.2` unreleased fixes on `main`)
+- **Git Branch**: `main`
 - **Active Test Suite**:
   - Unit tests: **138 passed**, 0 failed
   - Integration tests: **24 passed**, 0 failed

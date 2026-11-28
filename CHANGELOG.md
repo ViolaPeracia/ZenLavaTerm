@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Documentation consolidation**: Consolidated `docs/` into 5 guides (`docs/README.md`, `docs/configuration.md`, `docs/troubleshooting.md`, `docs/architecture.md`, `docs/releasing.md`) and updated stale references and test counts across agent/CI files.
+
 ### Fixed
 - **Audio-reactive boom/shimmer & WASAPI pause handling**: Added edge-detonated bass shockwaves with inward rebound and soft-music radius/temperature shimmer in `Simulation::apply_audio_signals`; decayed idle WASAPI loopback ring buffers to silence after 120ms without new samples; ignored non-fatal `cpal::ErrorKind::Xrun` / `DeviceChanged` / `RealtimeDenied` callbacks so pausing playback does not trigger synthetic fallback beats.
 - **CLI argument validation & conflict enforcement**: Applied CLI overrides (`--blobs`, `--renderer`, `--fps`, `--width`/`--height`, `--shockwave-force`, `--stir-force`) into `Config` and ran `Config::validate()` before simulation startup; rejected explicit `--system` + `--audio` combinations with a clear conflict error; enforced upper bounds on `widget.width`/`widget.height` (`1..=1000`) and `target_fps` (`1..=240`) in `Config::validate()` and `resolve_policy()`.

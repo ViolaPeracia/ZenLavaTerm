@@ -1,6 +1,6 @@
 # ZenLavaTerm Architecture Context for AI Agents
 
-> **Note**: Authoritative human-facing architecture documentation is maintained in [docs/architecture/](../../docs/architecture/). This file provides a condensed context reference for AI coding agents.
+> **Note**: Authoritative human-facing architecture documentation is maintained in [docs/architecture.md](../../docs/architecture.md). This file provides a condensed context reference for AI coding agents.
 
 ---
 

@@ -55,7 +55,7 @@ This file tracks planned work items and provides standardized templates for defi
 - **Invariants to Preserve**:
   - [ ] Zero behavior changes in public CLI or configuration
   - [ ] Unidirectional data flow maintained
-  - [ ] No regression in passing tests (140+ tests pass)
+  - [ ] No regression in passing tests (162 tests pass)
 - **Acceptance Criteria**:
   - [ ] Target code simplified or decoupled
   - [ ] `cargo clippy` and `cargo fmt` clean
@@ -95,7 +95,7 @@ This file tracks planned work items and provides standardized templates for defi
 
 ### [FEAT-001] Linux Audio Loopback & Monitor Source Auto-Discovery
 - **Status**: Backlog (Target: v1.1.0)
-- **Scope**: `src/audio/native.rs`, `src/audio/capture.rs`, `src/config/schema.rs`, `docs/architecture/audio-pipeline.md`, `docs/reference/cli.md`
+- **Scope**: `src/audio/native.rs`, `src/audio/capture.rs`, `src/config/schema.rs`, `docs/architecture.md`, `docs/README.md`
 - **Goal**: Implement automatic discovery and selection of PipeWire, PulseAudio, and ALSA monitor/loopback sources on Linux when `--audio-loopback` is passed, matching the zero-configuration loopback experience on Windows WASAPI.
 - **Problem & Context**: 
   On Windows, `--audio-loopback` leverages WASAPI render loopback (`eRender`) automatically. On Linux, `--audio-loopback` currently requires users to manually look up and pass monitor endpoint strings via `--audio-device` (e.g. `lavaterm --audio --audio-device "Default ALSA Output"`).
@@ -106,6 +106,6 @@ This file tracks planned work items and provides standardized templates for defi
   - [ ] Support `--audio-loopback` on Linux by auto-selecting the discovered monitor device
   - [ ] Unit tests for device name matching and fallback logic
   - [ ] Integration tests verifying stream fallback when loopback monitor is unavailable
-  - [ ] Update documentation in `docs/architecture/audio-pipeline.md`, `docs/reference/cli.md`, and `docs/troubleshooting/common-issues.md`
+  - [ ] Update documentation in `docs/architecture.md`, `docs/README.md`, and `docs/troubleshooting.md`
   - [ ] Zero compiler warnings (`cargo clippy --all-targets --all-features -- -D warnings`) and clean `cargo fmt`
 
