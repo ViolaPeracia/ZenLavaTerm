@@ -1,10 +1,7 @@
-# ZenLavaTerm Criterion Benchmark Baseline Report
+# ZenLavaTerm Criterion benchmark baseline report
 
-This document records empirical performance evidence and baseline micro-benchmark measurements for ZenLavaTerm v1.0.0. The measurements validate the performance claims recorded in `CHANGELOG.md` and verify throughput for scalar field evaluation, framebuffer rasterization, terminal renderers, FFT spectrum analysis, and lock-free audio ring buffer ingestion.
+This document records baseline Criterion micro-benchmark measurements for ZenLavaTerm v1.0.0. The measurements cover scalar field evaluation, framebuffer rasterization, terminal renderers, FFT spectrum analysis, and lock-free audio ring buffer ingestion.
 
-The raw benchmark log is preserved in [`docs/benchmarks/criterion_baseline.log`](criterion_baseline.log).
-
----
 
 ## 1. Test Environment
 
@@ -13,7 +10,6 @@ The raw benchmark log is preserved in [`docs/benchmarks/criterion_baseline.log`]
 - **Compilation Profile**: `bench` (`opt-level = 3`, `lto = true`, `codegen-units = 1`)
 - **Benchmark Framework**: Criterion 0.5 with 100 samples per measurement (3.0s warmup, 5.0s measurement window)
 
----
 
 ## 2. Empirical Benchmark Measurements
 
@@ -28,7 +24,6 @@ Evaluates potential field summation across an $80 \times 20$ sampling grid ($1,6
 
 *Observation*: Hoisting loop invariants and SIMD-friendly math provides near $O(1)$ scaling across blob counts up to 24 blobs.
 
----
 
 ### 2.2 Framebuffer Rasterization Loops
 Evaluates 2D field sampling and contiguous slice memory population in `VirtualFramebuffer`:
@@ -45,7 +40,6 @@ $$\text{Throughput} = \frac{1}{127.14 \times 10^{-6}\text{ s}} \approx 7,865\tex
 
 The stepped gradient optimization delivers a **50.7% speedup** over smooth gradient rasterization ($127.14\ \mu\text{s} \to 62.68\ \mu\text{s}$).
 
----
 
 ### 2.3 Terminal Renderers
 Evaluates ANSI string encoding and ANSI escape emission into contiguous byte buffers:
@@ -56,7 +50,6 @@ Evaluates ANSI string encoding and ANSI escape emission into contiguous byte buf
 | `renderers/block` ($80 \times 48$) | **81.24 µs** | [80.28 µs, 82.34 µs] | **12,309 FPS** |
 | `renderers/braille` ($160 \times 96$) | **72.33 µs** | [71.76 µs, 73.00 µs] | **13,825 FPS** |
 
----
 
 ### 2.4 FFT Analysis, Resampling & SPSC Seqlock Ring Buffer
 Evaluates real-time audio components:
@@ -77,7 +70,6 @@ Evaluates real-time audio components:
 - **Uncontended Snapshot Read**: Reading a 512-sample analysis window takes **842.34 nanoseconds**.
 - **Contended Concurrent Wrap-Around**: When an active producer thread pushes 256-sample chunks in an unthrottled loop continuously wrapping around the buffer, the consumer reads a guaranteed tear-free, linearizable 512-sample snapshot in **3.80 microseconds** (supporting >260,000 consistent snapshots/sec). At a 60 FPS render budget ($16,666\ \mu\text{s}$), audio snapshot acquisition takes less than $0.023\%$ of the frame interval even under peak contention.
 
----
 
 ### 2.5 End-to-End Pipeline & Adaptation
 Evaluates full simulation step + field evaluation + rasterization + terminal rendering:
@@ -90,6 +82,6 @@ Evaluates full simulation step + field evaluation + rasterization + terminal ren
 
 At a standard display refresh rate of 60 FPS ($16.67\text{ ms}$ frame budget), ZenLavaTerm consumes approximately **1.46%** of a single CPU core's frame budget ($244.11\ \mu\text{s} / 16,666\ \mu\text{s}$), leaving over 98.5% of the frame interval idle.
 
-*Engineering Trade-Offs & Honest Analysis*:
-- **Targeted Hotspot Optimizations**: Micro-optimizations delivered measurable gains in specific bottlenecks (e.g., stepped gradient rasterization achieves 15,954 FPS, a 50.7% speedup over smooth gradient rasterization; scalar field potential evaluation scales near-$O(1)$ across blob counts).
-- **Full Pipeline Audio Cost**: Integrating real-time FFT spectrum analysis (Hann windowing, Radix-2 butterfly passes, and Seqlock atomic synchronization) adds approximately 16.5 µs per frame compared to non-audio reactive rendering (244.1 µs vs 227.6 µs). The resulting 4,096 FPS composite throughput demonstrates that the complete audio visualization pipeline remains well within real-time terminal rendering budgets.
+*Notes*:
+- **Hotspot optimizations**: Stepped gradient rasterization achieves 15,954 FPS, a 50.7% speedup over smooth gradient rasterization, and scalar field potential evaluation scales near-$O(1)$ across blob counts.
+- **Full pipeline audio cost**: Integrating real-time FFT spectrum analysis (Hann windowing, Radix-2 butterfly passes, and Seqlock atomic synchronization) adds approximately 16.5 µs per frame compared to non-audio reactive rendering (244.1 µs vs 227.6 µs), yielding 4,096 FPS composite throughput.

@@ -1,6 +1,6 @@
 # ZenLavaTerm Release Pipeline Context
 
-> **Note**: The authoritative human-facing release playbook is in [docs/releases/process.md](../../docs/releases/process.md).
+> **Note**: The authoritative human-facing release playbook is in [docs/releasing.md](../../docs/releasing.md).
 
 ---
 

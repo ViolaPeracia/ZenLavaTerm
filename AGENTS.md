@@ -37,7 +37,7 @@ Before modifying or creating any code, configuration, or documentation:
    - Read the target module, its public exports (`mod.rs`, `lib.rs`), and its existing unit/integration tests.
    - Do not assume missing functionality or duplicate existing modules.
 2. **Review Relevant Decisions & Architecture**:
-   - Check [docs/architecture/](docs/architecture/) and [.ai/decisions/](.ai/decisions/) before proposing changes to data flow or dependencies.
+   - Check [docs/architecture.md](docs/architecture.md) and [.ai/decisions/](.ai/decisions/) before proposing changes to data flow or dependencies.
 3. **Check Current Clean State**:
    - Verify that working tree is clean with `git status`.
    - Run `cargo check --all-targets --all-features` to ensure baseline integrity.

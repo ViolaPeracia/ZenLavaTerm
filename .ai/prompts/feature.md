@@ -13,7 +13,7 @@ Task: Implement the following feature:
 Before writing any code:
 1. Review `AGENTS.md` and `.cursor/rules/architecture.mdc` for architectural boundaries.
 2. Inspect existing modules under `src/` to identify extension points and existing patterns.
-3. Check `docs/architecture/` and existing tests in `tests/integration_test.rs`.
+3. Check `docs/architecture.md` and existing tests in `tests/integration_test.rs`.
 
 Implementation Constraints:
 - Maintain unidirectional data flow: `Signals -> Simulation -> Framebuffer -> Renderer -> Stdout`.
@@ -28,7 +28,7 @@ Post-Implementation Validation:
 3. Run lint check: `cargo clippy --all-targets --all-features -- -D warnings`.
 4. Run full test suite: `cargo test`.
 5. Run headless smoke validation: `cargo run -- --headless --frames 30`.
-6. Synchronize documentation: update `docs/reference/` or `docs/architecture/` and `CHANGELOG.md`.
+6. Synchronize documentation: update `docs/architecture.md`, `docs/configuration.md`, or `docs/README.md` as needed, and `CHANGELOG.md`.
 
 Provide a concise summary of changes with clickable file references.
 ```

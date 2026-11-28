@@ -21,7 +21,7 @@ Closes # (issue number)
 - [ ] Integration tests added / updated in `tests/integration_test.rs`
 - [ ] `cargo fmt --check` passes
 - [ ] `cargo clippy --all-targets --all-features -- -D warnings` passes
-- [ ] `cargo test` passes (all 135+ tests pass)
+- [ ] `cargo test` passes (all 162 unit & integration tests pass)
 - [ ] `cargo run -- --headless --frames 30` passes
 - [ ] Documentation updated in `docs/`, `README.md`, or `CHANGELOG.md` if applicable
 
