@@ -51,8 +51,8 @@ impl ReactiveChoice {
     fn label(self) -> &'static str {
         match self {
             Self::Ambient => "Ambient (pure lava)",
-            Self::AudioLoopback => "Audio — Desktop Loopback (WASAPI)",
-            Self::AudioMic => "Audio — Microphone / Input",
+            Self::AudioLoopback => "Audio - Desktop Loopback (WASAPI)",
+            Self::AudioMic => "Audio - Microphone / Input",
             Self::System => "System Telemetry (CPU / RAM / Battery)",
         }
     }
@@ -200,6 +200,21 @@ impl WizardState {
         &self.themes[self.theme_idx]
     }
 
+    /// Plain-English description of the currently highlighted wizard row.
+    pub fn selected_description(&self) -> &'static str {
+        match self.selected_row {
+            0 => "Color palette for hot base, mid flow, cool top, and background.",
+            1 => "halfblock (smooth 2x vertical), block (chunky), braille (crisp 2x4 dots).",
+            2 => "Ambient = calm lava; Audio = reacts to music; System = CPU/RAM/battery.",
+            3 => "Refresh rate: 30 fps is balanced; 60 fps is ultra-smooth.",
+            4 => "Number of metaball droplets floating and merging in the lamp.",
+            5 => "Glow adds soft aura & furnace light; Molten Pool adds heated base wave.",
+            6 => "Enable mouse click/drag stirring and visible ripples when typing.",
+            7 => "Write settings to config.toml and start LavaTerm immediately.",
+            _ => "Start LavaTerm with these settings without overwriting config.toml.",
+        }
+    }
+
     /// Produces a validated `Config` reflecting all wizard selections.
     pub fn to_config(&self) -> Config {
         let mut cfg = self.base_config.clone();
@@ -266,15 +281,18 @@ impl Drop for WizardTerminalGuard {
 
 fn draw_wizard(
     out: &mut impl Write,
+    frame: &mut Vec<u8>,
     state: &WizardState,
     save_path: Option<&PathBuf>,
     error_msg: Option<&str>,
+    clear_screen: bool,
 ) -> std::io::Result<()> {
     let (cols, rows) = terminal::size().unwrap_or((80, 24));
-    let box_w: usize = 66.min(cols.saturating_sub(2) as usize).max(42);
+    let box_w: usize = 70.min(cols.saturating_sub(2) as usize).max(46);
     let inner_w = box_w - 2;
-    let box_h: usize = 18;
+    let box_h: usize = 20;
     let start_col = (cols as usize).saturating_sub(box_w) / 2 + 1;
+    let right_col = start_col + box_w - 1;
     let start_row = (rows as usize).saturating_sub(box_h) / 2 + 1;
 
     let palette = resolve_theme(state.current_theme()).unwrap_or_default();
@@ -282,31 +300,39 @@ fn draw_wizard(
     let hot = palette.bottom;
     let cool = palette.top;
 
-    execute!(out, Clear(ClearType::All))?;
+    frame.clear();
+    // Synchronized Output (DEC 2026) prevents mid-frame tearing/flicker on modern terminals.
+    frame.extend_from_slice(b"\x1b[?2026h");
+    if clear_screen {
+        frame.extend_from_slice(b"\x1b[2J\x1b[H");
+    }
 
     let mut cur_row = start_row;
     let horiz = "─".repeat(inner_w);
     // Top border
     write!(
-        out,
+        frame,
         "\x1b[{};{}H\x1b[48;2;14;14;22m\x1b[38;2;{};{};{}m╭{}╮\x1b[0m",
         cur_row, start_col, accent.r, accent.g, accent.b, horiz
     )?;
     cur_row += 1;
 
     // Header
-    let title = "ZenLavaTerm Setup — Default Configuration";
-    let pad_title = inner_w.saturating_sub(title.len() + 2);
+    let title = "ZenLavaTerm Setup - Default Configuration";
+    let title_trunc: String = title.chars().take(inner_w.saturating_sub(2)).collect();
+    let pad_title = inner_w.saturating_sub(title_trunc.chars().count() + 2);
     write!(
-        out,
-        "\x1b[{};{}H\x1b[48;2;14;14;22m\x1b[38;2;{};{};{}m│\x1b[1m\x1b[38;2;245;245;255m  {}{}\x1b[0m\x1b[48;2;14;14;22m\x1b[38;2;{};{};{}m│\x1b[0m",
+        frame,
+        "\x1b[{};{}H\x1b[48;2;14;14;22m\x1b[38;2;{};{};{}m│\x1b[1m\x1b[38;2;245;245;255m  {}{}\x1b[0m\x1b[{};{}H\x1b[48;2;14;14;22m\x1b[38;2;{};{};{}m│\x1b[0m",
         cur_row,
         start_col,
         accent.r,
         accent.g,
         accent.b,
-        title,
+        title_trunc,
         " ".repeat(pad_title),
+        cur_row,
+        right_col,
         accent.r,
         accent.g,
         accent.b
@@ -315,7 +341,7 @@ fn draw_wizard(
 
     // Divider
     write!(
-        out,
+        frame,
         "\x1b[{};{}H\x1b[48;2;14;14;22m\x1b[38;2;65;68;88m├{}┤\x1b[0m",
         cur_row, start_col, horiz
     )?;
@@ -356,9 +382,9 @@ fn draw_wizard(
         } else {
             "\x1b[48;2;14;14;22m"
         };
-        let marker = if active { "▸" } else { " " };
+        let marker = if active { ">" } else { " " };
         let val_display = if active {
-            format!("◀ {val} ▶")
+            format!("< {val} >")
         } else {
             format!("  {val}  ")
         };
@@ -371,26 +397,28 @@ fn draw_wizard(
         let pad = inner_w.saturating_sub(truncated.chars().count() + swatch_plain_len);
 
         write!(
-            out,
+            frame,
             "\x1b[{};{}H\x1b[48;2;14;14;22m\x1b[38;2;{};{};{}m│{bg}",
             cur_row, start_col, accent.r, accent.g, accent.b
         )?;
         if active {
-            write!(out, "\x1b[1m\x1b[38;2;255;255;255m{truncated}\x1b[22m")?;
+            write!(frame, "\x1b[1m\x1b[38;2;255;255;255m{truncated}\x1b[22m")?;
         } else {
-            write!(out, "\x1b[38;2;195;200;220m{truncated}")?;
+            write!(frame, "\x1b[38;2;195;200;220m{truncated}")?;
         }
         if idx == 0 {
             write!(
-                out,
+                frame,
                 " \x1b[38;2;{};{};{}m█\x1b[38;2;{};{};{}m█\x1b[38;2;{};{};{}m█ ",
                 hot.r, hot.g, hot.b, accent.r, accent.g, accent.b, cool.r, cool.g, cool.b
             )?;
         }
         write!(
-            out,
-            "{}\x1b[48;2;14;14;22m\x1b[38;2;{};{};{}m│\x1b[0m",
+            frame,
+            "{}\x1b[{};{}H\x1b[48;2;14;14;22m\x1b[38;2;{};{};{}m│\x1b[0m",
             " ".repeat(pad),
+            cur_row,
+            right_col,
             accent.r,
             accent.g,
             accent.b
@@ -398,9 +426,38 @@ fn draw_wizard(
         cur_row += 1;
     }
 
+    // Divider before description
+    write!(
+        frame,
+        "\x1b[{};{}H\x1b[48;2;14;14;22m\x1b[38;2;65;68;88m├{}┤\x1b[0m",
+        cur_row, start_col, horiz
+    )?;
+    cur_row += 1;
+
+    // Live explanation line for the currently highlighted option
+    let desc_line = format!("  {}", state.selected_description());
+    let desc_trunc: String = desc_line.chars().take(inner_w).collect();
+    let desc_pad = inner_w.saturating_sub(desc_trunc.chars().count());
+    write!(
+        frame,
+        "\x1b[{};{}H\x1b[48;2;14;14;22m\x1b[38;2;{};{};{}m│\x1b[38;2;165;210;255m{desc_trunc}{}\x1b[{};{}H\x1b[48;2;14;14;22m\x1b[38;2;{};{};{}m│\x1b[0m",
+        cur_row,
+        start_col,
+        accent.r,
+        accent.g,
+        accent.b,
+        " ".repeat(desc_pad),
+        cur_row,
+        right_col,
+        accent.r,
+        accent.g,
+        accent.b
+    )?;
+    cur_row += 1;
+
     // Blank spacer
     write!(
-        out,
+        frame,
         "\x1b[{};{}H\x1b[48;2;14;14;22m\x1b[38;2;{};{};{}m│{}│\x1b[0m",
         cur_row,
         start_col,
@@ -419,11 +476,12 @@ fn draw_wizard(
     for (row_id, text) in action_rows {
         let active = state.selected_row == row_id;
         let btn = if active {
-            format!("  ▸ [ {text} ]")
+            format!("  > [ {text} ]")
         } else {
             format!("    [ {text} ]")
         };
-        let pad = inner_w.saturating_sub(btn.chars().count());
+        let btn_trunc: String = btn.chars().take(inner_w).collect();
+        let pad = inner_w.saturating_sub(btn_trunc.chars().count());
         let style = if active && row_id == 7 {
             format!(
                 "\x1b[48;2;{};{};{}m\x1b[1m\x1b[38;2;14;14;22m",
@@ -435,14 +493,16 @@ fn draw_wizard(
             "\x1b[48;2;14;14;22m\x1b[38;2;165;170;192m".to_string()
         };
         write!(
-            out,
-            "\x1b[{};{}H\x1b[48;2;14;14;22m\x1b[38;2;{};{};{}m│{style}{btn}{}\x1b[0m\x1b[48;2;14;14;22m\x1b[38;2;{};{};{}m│\x1b[0m",
+            frame,
+            "\x1b[{};{}H\x1b[48;2;14;14;22m\x1b[38;2;{};{};{}m│{style}{btn_trunc}{}\x1b[0m\x1b[{};{}H\x1b[48;2;14;14;22m\x1b[38;2;{};{};{}m│\x1b[0m",
             cur_row,
             start_col,
             accent.r,
             accent.g,
             accent.b,
             " ".repeat(pad),
+            cur_row,
+            right_col,
             accent.r,
             accent.g,
             accent.b
@@ -452,7 +512,7 @@ fn draw_wizard(
 
     // Divider
     write!(
-        out,
+        frame,
         "\x1b[{};{}H\x1b[48;2;14;14;22m\x1b[38;2;65;68;88m├{}┤\x1b[0m",
         cur_row, start_col, horiz
     )?;
@@ -463,7 +523,7 @@ fn draw_wizard(
         .map(|p| format!("File: {}", p.display()))
         .unwrap_or_else(|| "File: (no default config directory detected)".to_string());
     let footer_lines = [
-        " ↑/↓ Select  ←/→ Change  Enter Confirm  Esc Skip".to_string(),
+        " Up/Down Select  Left/Right Change  Enter Confirm  Esc Skip".to_string(),
         " Tip: Run 'lavaterm --config' anytime to edit defaults.".to_string(),
         if let Some(err) = error_msg {
             format!(" Error: {err}")
@@ -482,14 +542,16 @@ fn draw_wizard(
             "\x1b[38;2;140;146;172m"
         };
         write!(
-            out,
-            "\x1b[{};{}H\x1b[48;2;14;14;22m\x1b[38;2;{};{};{}m│{color}{truncated}{}\x1b[38;2;{};{};{}m│\x1b[0m",
+            frame,
+            "\x1b[{};{}H\x1b[48;2;14;14;22m\x1b[38;2;{};{};{}m│{color}{truncated}{}\x1b[{};{}H\x1b[48;2;14;14;22m\x1b[38;2;{};{};{}m│\x1b[0m",
             cur_row,
             start_col,
             accent.r,
             accent.g,
             accent.b,
             " ".repeat(pad),
+            cur_row,
+            right_col,
             accent.r,
             accent.g,
             accent.b
@@ -499,11 +561,13 @@ fn draw_wizard(
 
     // Bottom border
     write!(
-        out,
+        frame,
         "\x1b[{};{}H\x1b[48;2;14;14;22m\x1b[38;2;{};{};{}m╰{}╯\x1b[0m",
         cur_row, start_col, accent.r, accent.g, accent.b, horiz
     )?;
 
+    frame.extend_from_slice(b"\x1b[?2026l");
+    out.write_all(frame)?;
     out.flush()
 }
 
@@ -512,14 +576,33 @@ pub fn run_setup_wizard(initial_config: &Config) -> Result<WizardOutcome> {
     terminal::enable_raw_mode()?;
     let _guard = WizardTerminalGuard;
     let mut out = stdout();
-    execute!(out, EnterAlternateScreen, cursor::Hide)?;
+    execute!(
+        out,
+        EnterAlternateScreen,
+        cursor::Hide,
+        Clear(ClearType::All)
+    )?;
 
     let mut state = WizardState::from_config(initial_config);
     let save_path = default_config_write_path();
     let mut error_msg: Option<String> = None;
+    let mut frame_buf: Vec<u8> = Vec::with_capacity(8 * 1024);
+    let mut needs_clear = true;
+    let mut needs_redraw = true;
 
     loop {
-        draw_wizard(&mut out, &state, save_path.as_ref(), error_msg.as_deref())?;
+        if needs_redraw {
+            draw_wizard(
+                &mut out,
+                &mut frame_buf,
+                &state,
+                save_path.as_ref(),
+                error_msg.as_deref(),
+                needs_clear,
+            )?;
+            needs_clear = false;
+            needs_redraw = false;
+        }
 
         match event::read()? {
             Event::Key(key) if key.kind != KeyEventKind::Release => {
@@ -538,10 +621,22 @@ pub fn run_setup_wizard(initial_config: &Config) -> Result<WizardOutcome> {
 
                 match key.code {
                     KeyCode::Esc => return Ok(WizardOutcome::LaunchOnce(state.to_config())),
-                    KeyCode::Up | KeyCode::Char('k') => state.move_up(),
-                    KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => state.move_down(),
-                    KeyCode::Left | KeyCode::Char('h') => state.cycle(-1),
-                    KeyCode::Right | KeyCode::Char('l') | KeyCode::Char(' ') => state.cycle(1),
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        state.move_up();
+                        needs_redraw = true;
+                    }
+                    KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => {
+                        state.move_down();
+                        needs_redraw = true;
+                    }
+                    KeyCode::Left | KeyCode::Char('h') => {
+                        state.cycle(-1);
+                        needs_redraw = true;
+                    }
+                    KeyCode::Right | KeyCode::Char('l') | KeyCode::Char(' ') => {
+                        state.cycle(1);
+                        needs_redraw = true;
+                    }
                     KeyCode::Enter => match state.selected_row {
                         8 => return Ok(WizardOutcome::LaunchOnce(state.to_config())),
                         _ => {
@@ -556,6 +651,7 @@ pub fn run_setup_wizard(initial_config: &Config) -> Result<WizardOutcome> {
                                     }
                                     Err(err) => {
                                         error_msg = Some(err.to_string());
+                                        needs_redraw = true;
                                     }
                                 },
                                 None => {
@@ -570,7 +666,10 @@ pub fn run_setup_wizard(initial_config: &Config) -> Result<WizardOutcome> {
                     _ => {}
                 }
             }
-            Event::Resize(_, _) => {}
+            Event::Resize(_, _) => {
+                needs_clear = true;
+                needs_redraw = true;
+            }
             _ => {}
         }
     }
