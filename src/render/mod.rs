@@ -21,7 +21,53 @@ pub enum CursorMode {
     #[default]
     Absolute,
     Inline,
+    /// Plain LF (`\n`) row separation for cooked stdout, pipes, and status-bar snapshots.
     Stream,
+}
+
+/// Visual options controlling scalar field rasterization into a `VirtualFramebuffer`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RasterizeOptions {
+    /// Isosurface density threshold for metaball boundaries.
+    pub threshold: f32,
+    /// Enable smooth 3-stop gradient shading (false uses fast stepped stops).
+    pub gradient: bool,
+    /// Enable soft edge glow aura and bottom furnace light (disabled for 1-bit Braille).
+    pub ambient_glow: bool,
+    /// Enable animated molten bottom pool that blobs organically merge with and detach from.
+    pub molten_pool: bool,
+}
+
+impl Default for RasterizeOptions {
+    fn default() -> Self {
+        Self {
+            threshold: 1.0,
+            gradient: true,
+            ambient_glow: true,
+            molten_pool: true,
+        }
+    }
+}
+
+impl RasterizeOptions {
+    /// Builds rasterization options matched to a renderer backend.
+    ///
+    /// Automatically disables `ambient_glow` for `braille` because Braille's 1-bit dot
+    /// classifier treats any non-background pixel as an active dot.
+    pub fn for_renderer(
+        renderer_type: &str,
+        threshold: f32,
+        gradient: bool,
+        glow: bool,
+        molten_pool: bool,
+    ) -> Self {
+        Self {
+            threshold,
+            gradient,
+            ambient_glow: glow && gradient && renderer_type != "braille",
+            molten_pool,
+        }
+    }
 }
 
 /// Common interface implemented by terminal renderers.
@@ -34,13 +80,12 @@ pub trait Renderer {
     ) -> std::io::Result<()>;
 }
 
-/// Rasterizes the continuous simulation into the discrete virtual framebuffer using the given palette, threshold, and gradient mode.
-pub fn rasterize_simulation_options(
+/// Rasterizes the continuous simulation into the discrete virtual framebuffer.
+pub fn rasterize_simulation(
     sim: &Simulation,
     buffer: &mut VirtualFramebuffer,
     palette: &ColorPalette,
-    threshold: f32,
-    gradient: bool,
+    options: &RasterizeOptions,
 ) {
     let width = buffer.width;
     let height = buffer.height;
@@ -52,29 +97,95 @@ pub fn rasterize_simulation_options(
     let inv_w = 1.0 / width as f32;
     let inv_h = 1.0 / height as f32;
     let pixels = buffer.as_mut_slice();
+    let use_pool = options.molten_pool && height >= 6;
+    let t = sim.elapsed_time;
 
     for y in 0..height {
         // Map discrete y [0..height] to normalized space [0.0..1.0] (y=0 top in terminal, so invert for simulation bottom heat)
         let sim_y = 1.0 - (y as f32 + 0.5) * inv_h;
         let row_start = y * width;
+        let check_pool = use_pool && sim_y < 0.22;
 
         for x in 0..width {
             let sim_x = (x as f32 + 0.5) * inv_w;
 
-            let (field_val, temp) = sim.evaluate_at(sim_x, sim_y);
-            let pixel_color = palette.sample_lava_stepped(temp, field_val, threshold, gradient);
+            let (mut field_val, mut temp) = sim.evaluate_at(sim_x, sim_y);
 
-            pixels[row_start + x] = pixel_color;
+            if check_pool {
+                let surface_y = 0.042
+                    + 0.012 * (sim_x * 8.5 + t * 1.1).sin()
+                    + 0.008 * (sim_x * 14.0 - t * 0.75).cos();
+                let dy = (sim_y - surface_y).max(0.0);
+                let pool_field = 0.0028 / (dy * dy + 0.0020);
+                let combined = field_val + pool_field;
+                if combined > 0.0 {
+                    temp = (field_val * temp + pool_field * 1.0) / combined;
+                }
+                field_val = combined;
+            }
+
+            pixels[row_start + x] = palette.sample_lava_surface(
+                temp,
+                field_val,
+                options.threshold,
+                sim_y,
+                options.gradient,
+                options.ambient_glow,
+            );
         }
     }
 }
 
-/// Rasterizes the continuous simulation into the discrete virtual framebuffer using smooth gradient interpolation.
-pub fn rasterize_simulation(
-    sim: &Simulation,
-    buffer: &mut VirtualFramebuffer,
-    palette: &ColorPalette,
-    threshold: f32,
-) {
-    rasterize_simulation_options(sim, buffer, palette, threshold, true);
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::PhysicsParams;
+
+    #[test]
+    fn test_rasterize_options_disables_ambient_glow_for_braille() {
+        let hb = RasterizeOptions::for_renderer("halfblock", 1.0, true, true, true);
+        assert!(hb.ambient_glow);
+        assert!(hb.molten_pool);
+
+        let br = RasterizeOptions::for_renderer("braille", 1.0, true, true, true);
+        assert!(!br.ambient_glow);
+        assert!(br.molten_pool);
+
+        let stepped = RasterizeOptions::for_renderer("halfblock", 1.0, false, true, true);
+        assert!(!stepped.ambient_glow);
+    }
+
+    #[test]
+    fn test_molten_pool_populates_bottom_row() {
+        let sim = Simulation::new(PhysicsParams::default(), 4, 42);
+        let palette = ColorPalette::default();
+        let mut fb = VirtualFramebuffer::new(40, 20, palette.background);
+        let opts = RasterizeOptions {
+            threshold: 1.0,
+            gradient: true,
+            ambient_glow: false,
+            molten_pool: true,
+        };
+        rasterize_simulation(&sim, &mut fb, &palette, &opts);
+
+        let bottom_row_active = (0..40)
+            .filter(|&x| fb.get_pixel(x, 19) != Some(palette.background))
+            .count();
+        assert_eq!(
+            bottom_row_active, 40,
+            "Molten bottom pool must span the base row"
+        );
+    }
+
+    #[test]
+    fn test_braille_rasterization_keeps_upper_empty_pixels_exact_background() {
+        let sim = Simulation::new(PhysicsParams::default(), 4, 42);
+        let palette = ColorPalette::default();
+        let mut fb = VirtualFramebuffer::new(40, 20, palette.background);
+        let opts = RasterizeOptions::for_renderer("braille", 1.0, true, true, true);
+        rasterize_simulation(&sim, &mut fb, &palette, &opts);
+
+        // Top-left corner (far from blobs and bottom pool) stays exact background
+        assert_eq!(fb.get_pixel(0, 0), Some(palette.background));
+    }
 }

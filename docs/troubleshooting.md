@@ -8,19 +8,28 @@ List available input and loopback devices before debugging audio-reactive mode:
 lavaterm --list-audio-devices
 ```
 
-If no capture device is available or initialization fails, LavaTerm falls back to `SyntheticAudioGenerator` so the simulation keeps running.
+If no default capture device is available or initialization fails, LavaTerm falls back to `SyntheticAudioGenerator` and displays an automatic `[audio: synthetic fallback]` badge in the bottom-right corner so you know it is not reacting to live audio. Press `Ctrl+i` (or `Tab`) at any time to toggle the 1-line status HUD showing the active audio source (`System Audio`, `Input Device`, or `Synthetic`). Pass `--no-audio-fallback` to fail fast instead of falling back.
+
+Specifying `--audio-device <NAME>` or `--audio-loopback` automatically enables audio mode and fails fast if the requested device does not exist or loopback is unavailable on your OS.
 
 ### Windows WASAPI loopback
 
-To react to desktop audio output rather than a microphone, pass `--audio-loopback`:
+On Windows, desktop audio output capture is supported natively via WASAPI loopback:
 
 ```bash
-lavaterm --audio --audio-loopback
+lavaterm --audio-loopback
 ```
 
 When desktop audio stops playing, WASAPI loopback buffers decay to silence after roughly 120ms. Pausing media or encountering a non-fatal stream pause does not trigger synthetic fallback, so the simulation settles cleanly until playback resumes.
 
-### Linux ALSA
+### Linux ALSA & PipeWire / PulseAudio monitors
+
+`--audio-loopback` is currently Windows-only (WASAPI). On Linux, capture desktop audio by selecting a PipeWire or PulseAudio monitor device with `--audio-device`:
+
+```bash
+lavaterm --list-audio-devices
+lavaterm --audio-device "Monitor of ..."
+```
 
 Building from source on Linux requires ALSA development headers and `pkg-config`:
 

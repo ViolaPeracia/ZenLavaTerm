@@ -10,7 +10,7 @@ use std::io::{self, Write};
 pub struct BlockRenderer {
     last_fg: Option<Rgb>,
     cursor_mode: CursorMode,
-    has_rendered: bool,
+    last_rendered_rows: Option<usize>,
 }
 
 impl BlockRenderer {
@@ -35,11 +35,14 @@ impl Renderer for BlockRenderer {
 
         self.last_fg = None;
 
-        if self.cursor_mode == CursorMode::Inline && self.has_rendered {
-            if term_rows > 1 {
-                write!(writer, "\r\x1b[{}A", term_rows - 1)?;
-            } else if term_rows == 1 {
-                writer.write_all(b"\r")?;
+        let prev_rows = self.last_rendered_rows;
+        if self.cursor_mode == CursorMode::Inline {
+            if let Some(prev) = prev_rows {
+                if prev > 1 {
+                    write!(writer, "\r\x1b[{}A", prev - 1)?;
+                } else if prev == 1 {
+                    writer.write_all(b"\r")?;
+                }
             }
         }
 
@@ -69,10 +72,20 @@ impl Renderer for BlockRenderer {
 
                 writer.write_all("█".as_bytes())?;
             }
+
+            if self.cursor_mode == CursorMode::Inline {
+                writer.write_all(b"\x1b[0m\x1b[K")?;
+                self.last_fg = None;
+            }
+        }
+
+        if self.cursor_mode == CursorMode::Inline && prev_rows.is_some_and(|prev| term_rows < prev)
+        {
+            writer.write_all(b"\x1b[J")?;
         }
 
         write!(writer, "\x1b[0m")?;
-        self.has_rendered = true;
+        self.last_rendered_rows = Some(term_rows);
         Ok(())
     }
 }
@@ -95,25 +108,27 @@ mod tests {
     }
 
     #[test]
-    fn test_inline_mode_omits_absolute_row1_move() {
-        let mut renderer = BlockRenderer::with_cursor_mode(super::super::CursorMode::Inline);
-        let fb = VirtualFramebuffer::new(2, 2, Rgb::new(0, 0, 0));
+    fn test_inline_mode_tracks_previous_height_across_resizes() {
+        let mut renderer = BlockRenderer::with_cursor_mode(CursorMode::Inline);
+        let fb4 = VirtualFramebuffer::new(2, 4, Rgb::new(0, 0, 0));
+        let fb2 = VirtualFramebuffer::new(2, 2, Rgb::new(0, 0, 0));
+        let fb5 = VirtualFramebuffer::new(2, 5, Rgb::new(0, 0, 0));
 
-        let mut first = Vec::new();
-        renderer
-            .render(&fb, &mut first)
-            .expect("First render succeeds");
-        let first_text = String::from_utf8_lossy(&first);
-        assert!(!first_text.contains("\x1b[1;1H"));
-        assert!(!first_text.contains("\x1b[2;1H"));
-        assert!(first_text.contains("\r\n"));
+        let mut out1 = Vec::new();
+        renderer.render(&fb4, &mut out1).unwrap();
+        assert!(!String::from_utf8_lossy(&out1).contains("\x1b[1;1H"));
 
-        let mut second = Vec::new();
-        renderer
-            .render(&fb, &mut second)
-            .expect("Second render succeeds");
-        let second_text = String::from_utf8_lossy(&second);
-        assert!(second_text.starts_with("\r\x1b[1A"));
-        assert!(!second_text.contains("\x1b[1;1H"));
+        let mut out2 = Vec::new();
+        renderer.render(&fb2, &mut out2).unwrap();
+        let t2 = String::from_utf8_lossy(&out2);
+        assert!(t2.starts_with("\r\x1b[3A"));
+        assert!(t2.contains("\x1b[K"));
+        assert!(t2.contains("\x1b[J"));
+
+        let mut out3 = Vec::new();
+        renderer.render(&fb5, &mut out3).unwrap();
+        let t3 = String::from_utf8_lossy(&out3);
+        assert!(t3.starts_with("\r\x1b[1A"));
+        assert!(!t3.contains("\x1b[J"));
     }
 }

@@ -1,5 +1,27 @@
 use super::signals::AudioSignals;
 
+/// Active audio signal source reported for user-visible diagnostics and HUD display.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AudioSourceKind {
+    /// System output loopback capture (e.g. Windows WASAPI loopback).
+    SystemAudio,
+    /// Microphone or explicit monitor input device capture.
+    InputDevice,
+    /// Deterministic synthetic beat generator (fallback or offline demo).
+    Synthetic,
+}
+
+impl AudioSourceKind {
+    /// Human-readable label for status overlays and diagnostics.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::SystemAudio => "System Audio",
+            Self::InputDevice => "Input Device",
+            Self::Synthetic => "Synthetic",
+        }
+    }
+}
+
 /// Trait implemented by audio capture providers.
 pub trait AudioProvider: Send {
     fn poll_signals(&mut self) -> AudioSignals;
@@ -8,6 +30,9 @@ pub trait AudioProvider: Send {
     }
     fn provider_name(&self) -> &'static str {
         "unknown"
+    }
+    fn source_kind(&self) -> AudioSourceKind {
+        AudioSourceKind::Synthetic
     }
 }
 
@@ -40,6 +65,9 @@ impl AudioProvider for MockAudioProvider {
     }
     fn provider_name(&self) -> &'static str {
         "mock"
+    }
+    fn source_kind(&self) -> AudioSourceKind {
+        AudioSourceKind::Synthetic
     }
 }
 
@@ -92,6 +120,9 @@ impl AudioProvider for SyntheticAudioGenerator {
     fn provider_name(&self) -> &'static str {
         "synthetic"
     }
+    fn source_kind(&self) -> AudioSourceKind {
+        AudioSourceKind::Synthetic
+    }
 }
 
 #[cfg(test)]
@@ -105,5 +136,6 @@ mod tests {
         let t1 = gen.time;
         gen.poll_signals();
         assert!(gen.time - t1 < 0.01);
+        assert_eq!(gen.source_kind(), AudioSourceKind::Synthetic);
     }
 }

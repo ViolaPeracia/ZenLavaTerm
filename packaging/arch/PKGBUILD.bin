@@ -1,12 +1,12 @@
 # Maintainer: ZenLavaTerm Contributors <https://github.com/ViolaPeracia/ZenLavaTerm>
 pkgname=lavaterm-bin
-pkgver=1.0.1
+pkgver=1.1.0
 pkgrel=1
 pkgdesc="A terminal-native ambient lava lamp and metaball visualizer (precompiled binary)"
 arch=('x86_64')
 url="https://github.com/ViolaPeracia/ZenLavaTerm"
 license=('Apache-2.0')
-depends=('gcc-libs')
+depends=('gcc-libs' 'alsa-lib')
 provides=('lavaterm')
 conflicts=('lavaterm' 'lavaterm-git')
 source=("$pkgname-$pkgver.deb::$url/releases/download/v$pkgver/ZenLavaTerm-v$pkgver-linux-x86_64.deb")

@@ -1,7 +1,7 @@
 //! Real-time audio stream capture and spectrum analyzer provider.
 
 use super::fft::SpectrumAnalyzer;
-use super::provider::{AudioProvider, SyntheticAudioGenerator};
+use super::provider::{AudioProvider, AudioSourceKind, SyntheticAudioGenerator};
 use super::ring_buffer::PcmRingBuffer;
 use super::signals::AudioSignals;
 
@@ -18,6 +18,7 @@ pub struct LiveAudioProvider {
     analyzer: SpectrumAnalyzer,
     sample_buf: Vec<f32>,
     stream_alive: Arc<AtomicBool>,
+    live_source_kind: AudioSourceKind,
     fallback_generator: SyntheticAudioGenerator,
     last_samples_written: usize,
     last_sample_time: Option<std::time::Instant>,
@@ -53,11 +54,18 @@ impl LiveAudioProvider {
             analyzer,
             sample_buf: Vec::with_capacity(size),
             stream_alive: Arc::new(AtomicBool::new(true)),
+            live_source_kind: AudioSourceKind::InputDevice,
             fallback_generator: SyntheticAudioGenerator::new(120.0),
             last_samples_written: 0,
             last_sample_time: None,
             _backend: backend,
         }
+    }
+
+    /// Configures the live audio source kind (`SystemAudio` vs `InputDevice`).
+    pub fn with_source_kind(mut self, source_kind: AudioSourceKind) -> Self {
+        self.live_source_kind = source_kind;
+        self
     }
 
     /// Configures the shared stream alive atomic flag.
@@ -159,6 +167,14 @@ impl AudioProvider for LiveAudioProvider {
 
     fn provider_name(&self) -> &'static str {
         "live"
+    }
+
+    fn source_kind(&self) -> AudioSourceKind {
+        if self.stream_alive.load(Ordering::Relaxed) {
+            self.live_source_kind
+        } else {
+            AudioSourceKind::Synthetic
+        }
     }
 }
 

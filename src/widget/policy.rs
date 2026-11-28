@@ -50,10 +50,10 @@ pub struct ResolvedPolicy {
 
 /// Resolves raw inputs into a validated `ResolvedPolicy` following strict precedence rules.
 ///
-/// Precedence: CLI Arguments > TOML Configuration > Built-in Defaults.
+/// Precedence: CLI Arguments > Mode-scoped TOML Configuration > Built-in Defaults.
+/// `[widget]` TOML settings only take effect in widget/inline/snapshot modes so configuring
+/// widget defaults never hijacks a normal interactive `lavaterm` session or breaks resize.
 pub fn resolve_policy(input: &PolicyInput) -> Result<ResolvedPolicy> {
-    // 1. Conflict Validation
-    // ponytail: manual combinatorial flag checks; use clap ArgGroup conflicts_with if CLI routing gets more complex
     if input.cli_snapshot && (input.cli_inline || input.cli_headless) {
         return Err(LavaError::Config(
             "Conflict: --snapshot cannot be combined with --inline or --headless".to_string(),
@@ -65,12 +65,13 @@ pub fn resolve_policy(input: &PolicyInput) -> Result<ResolvedPolicy> {
         ));
     }
 
-    // 2. Resolve ExecutionMode
+    let in_widget_mode = input.cli_widget || input.cli_inline || input.cli_snapshot;
+
     let mode = if input.cli_snapshot {
         ExecutionMode::Snapshot
     } else if input.cli_headless {
         ExecutionMode::Headless
-    } else if input.cli_inline || input.toml_widget_inline {
+    } else if input.cli_inline || (input.cli_widget && input.toml_widget_inline) {
         ExecutionMode::Inline
     } else if input.cli_widget {
         ExecutionMode::Widget
@@ -78,8 +79,6 @@ pub fn resolve_policy(input: &PolicyInput) -> Result<ResolvedPolicy> {
         ExecutionMode::Interactive
     };
 
-    // 3. Resolve Target FPS
-    // Precedence: CLI --fps > (Widget mode default 15 / toml_widget_fps) > (Interactive toml_render_fps) > 30
     if let Some(0) = input.cli_fps {
         return Err(LavaError::Config(
             "Target FPS must be greater than zero".to_string(),
@@ -87,7 +86,7 @@ pub fn resolve_policy(input: &PolicyInput) -> Result<ResolvedPolicy> {
     }
     let target_fps = if let Some(fps) = input.cli_fps {
         fps
-    } else if mode == ExecutionMode::Widget {
+    } else if input.cli_widget {
         if input.toml_widget_fps > 0 {
             input.toml_widget_fps
         } else {
@@ -110,16 +109,18 @@ pub fn resolve_policy(input: &PolicyInput) -> Result<ResolvedPolicy> {
         ));
     }
 
-    // 4. Resolve Compact Policy
-    // --widget implies compact mode; --compact forces it; toml [widget].compact can configure it
-    let force_compact = input.cli_compact
-        || input.cli_widget
-        || input.toml_widget_compact
-        || mode == ExecutionMode::Widget;
+    let force_compact =
+        input.cli_compact || input.cli_widget || (in_widget_mode && input.toml_widget_compact);
 
-    // 5. Resolve Explicit Dimensions
-    let width = input.cli_width.or(input.toml_widget_width);
-    let height = input.cli_height.or(input.toml_widget_height);
+    let (width, height) = if in_widget_mode {
+        (
+            input.cli_width.or(input.toml_widget_width),
+            input.cli_height.or(input.toml_widget_height),
+        )
+    } else {
+        (input.cli_width, input.cli_height)
+    };
+
     let explicit_dimensions = match (width, height) {
         (Some(w), Some(h)) => {
             if w == 0 || h == 0 {
@@ -134,14 +135,9 @@ pub fn resolve_policy(input: &PolicyInput) -> Result<ResolvedPolicy> {
             }
             Some((w, h))
         }
-        (Some(_), None) => {
+        (Some(_), None) | (None, Some(_)) => {
             return Err(LavaError::Config(
-                "Must specify both --width and --height together".to_string(),
-            ));
-        }
-        (None, Some(_)) => {
-            return Err(LavaError::Config(
-                "Must specify both --width and --height together".to_string(),
+                "Must specify both width and height together".to_string(),
             ));
         }
         (None, None) => None,
@@ -195,6 +191,47 @@ mod tests {
         assert!(!policy.force_compact);
         assert_eq!(policy.explicit_dimensions, None);
         assert!(policy.adapt_blobs);
+    }
+
+    #[test]
+    fn test_normal_mode_ignores_toml_widget_settings() {
+        let input = PolicyInput {
+            toml_render_fps: 60,
+            toml_widget_fps: 15,
+            toml_widget_compact: true,
+            toml_widget_inline: true,
+            toml_widget_width: Some(30),
+            toml_widget_height: None, // Even partial widget dims must not break normal mode
+            toml_widget_adapt_blobs: true,
+            ..Default::default()
+        };
+
+        let policy = resolve_policy(&input).expect("Normal mode ignores [widget] TOML");
+        assert_eq!(policy.mode, ExecutionMode::Interactive);
+        assert_eq!(policy.target_fps, 60);
+        assert!(!policy.force_compact);
+        assert_eq!(policy.explicit_dimensions, None);
+    }
+
+    #[test]
+    fn test_widget_mode_applies_toml_widget_settings() {
+        let input = PolicyInput {
+            cli_widget: true,
+            toml_render_fps: 60,
+            toml_widget_fps: 18,
+            toml_widget_compact: true,
+            toml_widget_inline: true,
+            toml_widget_width: Some(36),
+            toml_widget_height: Some(10),
+            toml_widget_adapt_blobs: true,
+            ..Default::default()
+        };
+
+        let policy = resolve_policy(&input).expect("Widget mode applies [widget] TOML");
+        assert_eq!(policy.mode, ExecutionMode::Inline);
+        assert_eq!(policy.target_fps, 18);
+        assert!(policy.force_compact);
+        assert_eq!(policy.explicit_dimensions, Some((36, 10)));
     }
 
     #[test]

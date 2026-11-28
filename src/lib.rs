@@ -1,7 +1,8 @@
 //! LavaTerm — A terminal-native ambient lava lamp & metaball visualizer.
 //!
-//! This crate provides the decoupled core simulation, virtual framebuffer,
-//! color processing, and terminal rendering abstractions for LavaTerm.
+//! `lavaterm` is a binary application crate. Semantic versioning applies to the
+//! CLI interface and `config.toml` schema; internal Rust module exports exposed
+//! here support integration tests and benchmarks and may evolve between releases.
 
 pub mod audio;
 pub mod config;

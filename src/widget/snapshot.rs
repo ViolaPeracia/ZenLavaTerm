@@ -2,8 +2,8 @@
 
 use crate::core::Simulation;
 use crate::render::{
-    rasterize_simulation_options, BlockRenderer, BrailleRenderer, ColorPalette, CursorMode,
-    HalfBlockRenderer, Renderer, VirtualFramebuffer,
+    rasterize_simulation, BlockRenderer, BrailleRenderer, ColorPalette, CursorMode,
+    HalfBlockRenderer, RasterizeOptions, Renderer, VirtualFramebuffer,
 };
 use crate::{LavaError, Result};
 
@@ -39,7 +39,9 @@ pub fn render_snapshot_options(
     };
 
     let mut fb = VirtualFramebuffer::new(v_width, v_height, palette.background);
-    rasterize_simulation_options(sim, &mut fb, palette, threshold, gradient);
+    let raster_opts =
+        RasterizeOptions::for_renderer(renderer_type, threshold, gradient, true, true);
+    rasterize_simulation(sim, &mut fb, palette, &raster_opts);
 
     // 3. Serialize into in-memory ANSI string without absolute cursor positioning
     let mut out = Vec::with_capacity(cols as usize * rows as usize * 30);

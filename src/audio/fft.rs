@@ -4,21 +4,24 @@ use super::signals::AudioSignals;
 use crate::{LavaError, Result};
 use std::f32::consts::PI;
 
-/// Zero-dependency Cooley-Tukey Radix-2 FFT and spectrum analyzer.
+/// Zero-dependency Cooley-Tukey Radix-2 FFT and spectrum analyzer with pre-allocated scratch buffers.
 #[derive(Debug, Clone)]
 pub struct SpectrumAnalyzer {
     /// Audio sample rate in Hz (e.g. 44100 or 48000).
     pub sample_rate: u32,
-    /// Analysis window size (must be power of two, e.g. 1024).
+    /// Analysis window size (power of two, e.g. 1024).
     pub window_size: usize,
+    /// Precomputed Hann window coefficients.
+    hann_window: Vec<f32>,
+    /// Reusable real FFT scratch buffer.
+    real_buf: Vec<f32>,
+    /// Reusable imaginary FFT scratch buffer.
+    imag_buf: Vec<f32>,
 }
 
 impl Default for SpectrumAnalyzer {
     fn default() -> Self {
-        Self {
-            sample_rate: 44100,
-            window_size: 1024,
-        }
+        Self::new(44100, 1024)
     }
 }
 
@@ -26,13 +29,20 @@ impl SpectrumAnalyzer {
     /// Creates a new `SpectrumAnalyzer` with given sample rate and window size.
     pub fn new(sample_rate: u32, window_size: usize) -> Self {
         let size = window_size.next_power_of_two().max(64);
+        let denom = (size - 1) as f32;
+        let hann_window = (0..size)
+            .map(|i| 0.5 * (1.0 - (2.0 * PI * i as f32 / denom).cos()))
+            .collect();
         Self {
             sample_rate,
             window_size: size,
+            hann_window,
+            real_buf: vec![0.0f32; size],
+            imag_buf: vec![0.0f32; size],
         }
     }
 
-    /// Computes Hann window coefficients.
+    /// Applies Hann window coefficients in-place.
     pub fn apply_hann_window(samples: &mut [f32]) {
         let n = samples.len();
         if n <= 1 {
@@ -118,30 +128,43 @@ impl SpectrumAnalyzer {
         Ok(())
     }
 
-    /// Analyzes a slice of PCM samples and returns normalized `AudioSignals`.
-    pub fn analyze(&self, pcm: &[f32]) -> AudioSignals {
+    /// Analyzes a slice of PCM samples using pre-allocated scratch buffers and returns normalized `AudioSignals`.
+    pub fn analyze(&mut self, pcm: &[f32]) -> AudioSignals {
         if pcm.is_empty() {
             return AudioSignals::default();
         }
 
         let n = self.window_size;
-        // ponytail: dynamic Vec alloc per frame; pre-allocated scratch buffers if audio polling throughput matters
-        let mut real = vec![0.0f32; n];
-        let mut imag = vec![0.0f32; n];
+        if self.real_buf.len() != n {
+            self.real_buf.resize(n, 0.0);
+        }
+        if self.imag_buf.len() != n {
+            self.imag_buf.resize(n, 0.0);
+        }
+        if self.hann_window.len() != n {
+            let denom = (n - 1).max(1) as f32;
+            self.hann_window = (0..n)
+                .map(|i| 0.5 * (1.0 - (2.0 * PI * i as f32 / denom).cos()))
+                .collect();
+        }
 
         let copy_len = pcm.len().min(n);
-        real[..copy_len].copy_from_slice(&pcm[..copy_len]);
+        self.real_buf[..copy_len].copy_from_slice(&pcm[..copy_len]);
+        self.real_buf[copy_len..].fill(0.0);
+        self.imag_buf.fill(0.0);
 
         // Compute RMS volume
         let mut rms_sum = 0.0f32;
-        for &s in &real[..copy_len] {
+        for &s in &self.real_buf[..copy_len] {
             rms_sum += s * s;
         }
         let volume = (rms_sum / copy_len as f32).sqrt().min(1.0);
 
-        // Window and FFT
-        Self::apply_hann_window(&mut real);
-        if let Err(e) = Self::compute_fft(&mut real, &mut imag) {
+        // Apply precomputed Hann window and run in-place FFT
+        for (sample, &coeff) in self.real_buf.iter_mut().zip(self.hann_window.iter()) {
+            *sample *= coeff;
+        }
+        if let Err(e) = Self::compute_fft(&mut self.real_buf, &mut self.imag_buf) {
             eprintln!("Warning: FFT computation failed in spectrum analyzer: {e}");
             return AudioSignals::default();
         }
@@ -157,7 +180,13 @@ impl SpectrumAnalyzer {
         let mut treble_sum = 0.0f32;
         let mut treble_count = 0;
 
-        for (bin, (&r, &im)) in real.iter().zip(imag.iter()).enumerate().take(num_bins) {
+        for (bin, (&r, &im)) in self
+            .real_buf
+            .iter()
+            .zip(self.imag_buf.iter())
+            .enumerate()
+            .take(num_bins)
+        {
             let freq = bin as f32 * freq_per_bin;
             let magnitude = (r * r + im * im).sqrt() / (n as f32);
 
@@ -189,7 +218,6 @@ impl SpectrumAnalyzer {
             0.0
         };
 
-        // Scale and normalize to [0.0, 1.0]
         let bass = (bass_avg * 15.0).clamp(0.0, 1.0);
         let mid = (mid_avg * 30.0).clamp(0.0, 1.0);
         let treble = (treble_avg * 60.0).clamp(0.0, 1.0);
@@ -210,67 +238,37 @@ mod tests {
 
     #[test]
     fn test_fft_sine_100hz_bass_dominant() {
-        let analyzer = SpectrumAnalyzer::new(44100, 1024);
+        let mut analyzer = SpectrumAnalyzer::new(44100, 1024);
         let pcm = generate_sine_wave(100.0, 44100, 1024);
         let signals = analyzer.analyze(&pcm);
 
-        assert!(
-            signals.bass > signals.mid,
-            "100Hz should have bass > mid (got bass={}, mid={})",
-            signals.bass,
-            signals.mid
-        );
-        assert!(
-            signals.bass > signals.treble,
-            "100Hz should have bass > treble (got bass={}, treble={})",
-            signals.bass,
-            signals.treble
-        );
+        assert!(signals.bass > signals.mid);
+        assert!(signals.bass > signals.treble);
     }
 
     #[test]
     fn test_fft_sine_1000hz_mid_dominant() {
-        let analyzer = SpectrumAnalyzer::new(44100, 1024);
+        let mut analyzer = SpectrumAnalyzer::new(44100, 1024);
         let pcm = generate_sine_wave(1000.0, 44100, 1024);
         let signals = analyzer.analyze(&pcm);
 
-        assert!(
-            signals.mid > signals.bass,
-            "1000Hz should have mid > bass (got mid={}, bass={})",
-            signals.mid,
-            signals.bass
-        );
-        assert!(
-            signals.mid > signals.treble,
-            "1000Hz should have mid > treble (got mid={}, treble={})",
-            signals.mid,
-            signals.treble
-        );
+        assert!(signals.mid > signals.bass);
+        assert!(signals.mid > signals.treble);
     }
 
     #[test]
     fn test_fft_sine_8000hz_treble_dominant() {
-        let analyzer = SpectrumAnalyzer::new(44100, 1024);
+        let mut analyzer = SpectrumAnalyzer::new(44100, 1024);
         let pcm = generate_sine_wave(8000.0, 44100, 1024);
         let signals = analyzer.analyze(&pcm);
 
-        assert!(
-            signals.treble > signals.bass,
-            "8000Hz should have treble > bass (got treble={}, bass={})",
-            signals.treble,
-            signals.bass
-        );
-        assert!(
-            signals.treble > signals.mid,
-            "8000Hz should have treble > mid (got treble={}, mid={})",
-            signals.treble,
-            signals.mid
-        );
+        assert!(signals.treble > signals.bass);
+        assert!(signals.treble > signals.mid);
     }
 
     #[test]
     fn test_fft_silence_produces_zero() {
-        let analyzer = SpectrumAnalyzer::new(44100, 1024);
+        let mut analyzer = SpectrumAnalyzer::new(44100, 1024);
         let pcm = vec![0.0f32; 1024];
         let signals = analyzer.analyze(&pcm);
 
@@ -278,6 +276,20 @@ mod tests {
         assert_eq!(signals.mid, 0.0);
         assert_eq!(signals.treble, 0.0);
         assert_eq!(signals.volume, 0.0);
+    }
+
+    #[test]
+    fn test_fft_reused_buffers_are_deterministic_across_calls() {
+        let mut analyzer = SpectrumAnalyzer::new(44100, 512);
+        let bass = generate_sine_wave(100.0, 44100, 512);
+        let silence = vec![0.0f32; 512];
+
+        let first = analyzer.analyze(&bass);
+        let silent = analyzer.analyze(&silence);
+        let second = analyzer.analyze(&bass);
+
+        assert_eq!(silent, AudioSignals::default());
+        assert_eq!(first, second);
     }
 
     #[test]
@@ -309,7 +321,6 @@ mod tests {
 
     #[test]
     fn test_compute_fft_valid_power_of_two_and_transform_correctness() {
-        // Delta impulse at t=0 -> constant magnitude in frequency domain
         let mut real = vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
         let mut imag = vec![0.0; 8];
         let res = SpectrumAnalyzer::compute_fft(&mut real, &mut imag);

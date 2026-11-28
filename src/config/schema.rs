@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 /// Root configuration for LavaTerm.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     #[serde(default)]
     pub simulation: SimulationConfig,
@@ -133,7 +134,7 @@ impl Config {
 
 /// Simulation-specific parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct SimulationConfig {
     /// Number of metaball blobs.
     #[serde(alias = "num_blobs")]
@@ -176,7 +177,7 @@ impl Default for SimulationConfig {
 
 /// Rendering options.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct RenderConfig {
     /// Renderer backend ("halfblock", "block", or "braille").
     #[serde(alias = "renderer_type")]
@@ -189,6 +190,12 @@ pub struct RenderConfig {
     /// Enable smooth gradient color mapping.
     #[serde(alias = "smooth_gradient")]
     pub gradient: bool,
+
+    /// Enable soft edge glow aura and bottom furnace ambient light (auto-disabled for Braille).
+    pub glow: bool,
+
+    /// Enable animated molten bottom pool for organic blob merging and detachment.
+    pub molten_pool: bool,
 }
 
 impl Default for RenderConfig {
@@ -197,6 +204,8 @@ impl Default for RenderConfig {
             renderer: "halfblock".to_string(),
             fps: 30,
             gradient: true,
+            glow: true,
+            molten_pool: true,
         }
     }
 }
@@ -206,7 +215,7 @@ pub type PaletteConfig = ColorPalette;
 
 /// Reactive system monitoring configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct ReactiveConfig {
     /// Enable system-reactive ambient visualizer mode.
     pub enabled: bool,
@@ -226,7 +235,7 @@ impl Default for ReactiveConfig {
 
 /// Audio reactive monitoring configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct AudioConfig {
     /// Enable audio-reactive ambient visualizer mode.
     pub enabled: bool,
@@ -256,6 +265,7 @@ impl Default for AudioConfig {
 
 /// Theme and visual styling configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ThemeConfig {
     /// Active theme name, preset (e.g. "ocean", "cyberpunk", "nord", "synthwave"), "auto", "pywal", or "wallust".
     #[serde(default)]
@@ -268,7 +278,7 @@ pub struct ThemeConfig {
 
 /// Widget and compact multiplexer configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct WidgetConfig {
     /// Enable compact layout scaling by default.
     #[serde(alias = "compact_mode")]
@@ -305,7 +315,7 @@ impl Default for WidgetConfig {
 
 /// Interactive physics and user input configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct InteractionConfig {
     /// Enable mouse click shockwaves, dragging, and scroll pressure.
     pub mouse: bool,
@@ -610,5 +620,23 @@ mod tests {
         config.widget.width = Some(100);
         config.widget.height = Some(0);
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_unknown_toml_fields_are_rejected_while_aliases_work() {
+        let bad_section = "[window]\nfps = 60\n";
+        let err_section = toml::from_str::<Config>(bad_section)
+            .expect_err("Unknown [window] section must be rejected");
+        assert!(err_section.to_string().contains("unknown field"));
+
+        let bad_key = "[simulation]\nblbs = 12\n";
+        let err_key =
+            toml::from_str::<Config>(bad_key).expect_err("Typo key blbs must be rejected");
+        assert!(err_key.to_string().contains("unknown field"));
+
+        let render_visuals = "[render]\nglow = false\nmolten_pool = false\n";
+        let parsed = toml::from_str::<Config>(render_visuals).expect("Valid visual options");
+        assert!(!parsed.render.glow);
+        assert!(!parsed.render.molten_pool);
     }
 }

@@ -35,6 +35,7 @@ impl Rgb {
     }
 
     /// Linearly interpolates between color `a` and `b` by factor `t` in $[0.0, 1.0]$.
+    #[inline]
     pub fn lerp(a: Self, b: Self, t: f32) -> Self {
         let t_clamped = t.clamp(0.0, 1.0);
         let r = (a.r as f32 + (b.r as f32 - a.r as f32) * t_clamped).round() as u8;
@@ -70,7 +71,7 @@ impl<'de> Deserialize<'de> for Rgb {
 
 /// Palette holding gradient anchor colors.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct ColorPalette {
     /// Heat source bottom color (hot).
     pub bottom: Rgb,
@@ -94,6 +95,64 @@ impl Default for ColorPalette {
 }
 
 impl ColorPalette {
+    /// Interpolates the 3-stop thermal ramp (`top -> middle -> bottom`).
+    #[inline]
+    fn sample_thermal_color(&self, temp: f32) -> Rgb {
+        let t = temp.clamp(0.0, 1.0);
+        if t < 0.5 {
+            Rgb::lerp(self.top, self.middle, t * 2.0)
+        } else {
+            Rgb::lerp(self.middle, self.bottom, (t - 0.5) * 2.0)
+        }
+    }
+
+    /// Samples lava color with optional ambient furnace background glow and soft outer halo.
+    ///
+    /// When `ambient_glow` is `false` (required for 1-bit Braille dot thresholding) or `gradient`
+    /// is `false` (fast stepped mode), pixels below `threshold` return `self.background` exactly.
+    #[inline]
+    pub fn sample_lava_surface(
+        &self,
+        temp: f32,
+        field_intensity: f32,
+        threshold: f32,
+        sim_y: f32,
+        gradient: bool,
+        ambient_glow: bool,
+    ) -> Rgb {
+        if !gradient || !ambient_glow {
+            return self.sample_lava_stepped(temp, field_intensity, threshold, gradient);
+        }
+
+        // Subtle furnace light cast upward from the heated lamp base.
+        let bg = if sim_y < 0.36 {
+            let h = ((0.36 - sim_y) / 0.36).clamp(0.0, 1.0);
+            Rgb::lerp(self.background, self.bottom, h * h * 0.18)
+        } else {
+            self.background
+        };
+
+        let halo_start = threshold * 0.55;
+        if field_intensity < halo_start {
+            return bg;
+        }
+
+        let base_color = self.sample_thermal_color(temp);
+
+        if field_intensity < threshold {
+            let denom = (threshold - halo_start).max(1e-4);
+            let halo = ((field_intensity - halo_start) / denom).clamp(0.0, 1.0);
+            return Rgb::lerp(bg, base_color, halo * halo * 0.48);
+        }
+
+        let edge_factor = ((field_intensity - threshold) / 0.35).clamp(0.0, 1.0);
+        Rgb::lerp(
+            Rgb::new(255, 255, 255),
+            base_color,
+            0.55 + 0.45 * edge_factor,
+        )
+    }
+
     /// Samples the gradient based on normalized temperature, field intensity, and gradient smoothing flag.
     pub fn sample_lava_stepped(
         &self,
@@ -117,15 +176,7 @@ impl ColorPalette {
             };
         }
 
-        // Lava color based on temperature: [0.0 = top/cold] -> [0.5 = middle] -> [1.0 = bottom/hot]
-        let t = temp.clamp(0.0, 1.0);
-        let base_color = if t < 0.5 {
-            Rgb::lerp(self.top, self.middle, t * 2.0)
-        } else {
-            Rgb::lerp(self.middle, self.bottom, (t - 0.5) * 2.0)
-        };
-
-        // Edge glow / rim highlights where field intensity is near threshold
+        let base_color = self.sample_thermal_color(temp);
         let edge_factor = ((field_intensity - threshold) / 0.3).clamp(0.0, 1.0);
         Rgb::lerp(Rgb::new(255, 255, 255), base_color, 0.4 + 0.6 * edge_factor)
     }
@@ -182,5 +233,33 @@ mod tests {
         let color_flat = palette.sample_lava_stepped(0.25, 2.0, 1.0, false);
         assert_eq!(color_flat, palette.top);
         assert_ne!(color_grad, palette.top);
+    }
+
+    #[test]
+    fn test_sample_lava_surface_glow_and_braille_isolation() {
+        let palette = ColorPalette::default();
+
+        // Ambient glow disabled (Braille/flat): pixels below threshold stay exact background
+        let no_glow_halo = palette.sample_lava_surface(0.8, 0.85, 1.0, 0.05, true, false);
+        assert_eq!(no_glow_halo, palette.background);
+
+        // Ambient glow enabled: halo band blends smoothly above background
+        let halo_color = palette.sample_lava_surface(0.8, 0.85, 1.0, 0.5, true, true);
+        assert_ne!(halo_color, palette.background);
+
+        // Furnace glow warms the bottom background while upper empty background stays pure
+        let bottom_bg = palette.sample_lava_surface(0.5, 0.0, 1.0, 0.02, true, true);
+        let top_bg = palette.sample_lava_surface(0.5, 0.0, 1.0, 0.90, true, true);
+        assert!(bottom_bg.r > palette.background.r);
+        assert_eq!(top_bg, palette.background);
+    }
+
+    #[test]
+    fn test_palette_rejects_unknown_fields() {
+        let toml_str = r##"
+            bottom = "#ff0000"
+            color1 = "#00ff00"
+        "##;
+        assert!(toml::from_str::<ColorPalette>(toml_str).is_err());
     }
 }

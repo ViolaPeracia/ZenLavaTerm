@@ -4,7 +4,7 @@ Contributions are welcome. Keep changes focused, preserve the module boundaries,
 
 ## Development setup
 
-- Rust 1.85+ (`rustup default stable`)
+- Rust 1.86+ (`rustup default stable`)
 - `rustfmt` and `clippy` (`rustup component add rustfmt clippy`)
 - Linux only: `libasound2-dev` and `pkg-config` for ALSA audio capture
 

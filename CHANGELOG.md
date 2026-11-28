@@ -7,10 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-28 — Visual Upgrade, Transparent Audio UX & Audit Hardening
+
+### Added
+- **Molten bottom pool & ambient edge glow**: Added `molten_pool = true` and `glow = true` under `[render]` via a unified `RasterizeOptions` rasterization API, rendering an undulating molten bottom heat pool, furnace glow, and soft edge aura around metaballs while automatically disabling glow on 1-bit `braille` and stepped color modes to keep edges sharp.
+- **Transparent audio source HUD & strict capture mode**: Added `AudioSourceKind` (`SystemAudio`, `InputDevice`, `Synthetic`), a toggleable 1-line bottom status HUD (`Ctrl+i` / `Tab`), an automatic `[audio: synthetic fallback]` warning badge whenever audio degrades to synthetic beats, and `--no-audio-fallback` to fail fast when live capture is unavailable.
+- **Zero-allocation FFT analysis**: Refactored `SpectrumAnalyzer::analyze(&mut self, pcm)` to reuse pre-allocated Hann window and FFT scratch buffers with zero per-frame heap allocations.
+- **MSRV & packaging verification**: Declared `rust-version = "1.86"` in `Cargo.toml` with a dedicated `msrv-check` CI job; added real Windows MSI silent install/launch/uninstall checks in `package.yml`, `--require-packages` enforcement in `scripts/smoke_test.py`, and `ldd` dynamic library auditing in `scripts/package_linux.sh`.
+- **Animated SVG README banner**: Replaced `assets/lavaterm-banner.svg` with a lightweight animated gooey metaball lamp banner.
+- `scripts/smoke_test_windows.ps1`: Zero-dependency PowerShell automated smoke test suite for Windows (25 cases covering metadata, headless, snapshots, audio enumeration, CLI validation, and theme/config error checks).
+- `Simulation::nudge_buoyancy(delta)`, `Simulation::base_params()`, `Simulation::set_base_params()`, `Simulation::apply_compact_scales()`, and `Simulation::reset()`.
+
 ### Changed
-- **Documentation consolidation**: Consolidated `docs/` into 5 guides (`docs/README.md`, `docs/configuration.md`, `docs/troubleshooting.md`, `docs/architecture.md`, `docs/releasing.md`) and updated stale references and test counts across agent/CI files.
+- **Strict TOML schema validation**: Added `#[serde(deny_unknown_fields)]` across all configuration structs (preserving legacy `#[serde(alias = ...)]` keys) and included the config file path in TOML parse errors.
+- **Ergonomic audio CLI flags**: `--audio-loopback` and `--audio-device` now automatically enable audio-reactive mode (and reject conflicts with `--system`), while failing fast on unsupported non-Windows loopback or nonexistent explicit device names instead of silently falling back to synthetic beats.
+- **Hardened release pipeline**: Propagated `VERSION` overrides through `scripts/package_linux.sh` and `scripts/package_windows.ps1`; pinned official `AppImage/appimagetool` `v1.9.1` with SHA-256 verification (removing the deprecated `AppImageKit`/`continuous` fallback); removed `continue-on-error: true` from SLSA build provenance attestations in `release.yml`; documented explicit tag pushing (`git push origin vX.Y.Z`) in `docs/releasing.md`.
+- **Binary-first library SemVer policy**: Documented library SemVer scope in `src/lib.rs` and `CursorMode::Stream` LF-only output contract in the renderer modules.
+- **Documentation consolidation**: Consolidated `docs/` into 5 guides (`docs/README.md`, `docs/configuration.md`, `docs/troubleshooting.md`, `docs/architecture.md`, `docs/releasing.md`) and removed inaccurate telemetry/keybinding descriptions (`GetProcessIoCounters`, nonexistent theme/renderer cycling).
 
 ### Fixed
+- **FPS-independent audio reaction**: Converted bass EMA smoothing (`1 - exp(-dt / tau)`), shimmer, and treble jitter (`sqrt(dt)`) in `Simulation::apply_audio_signals` to frame-rate-independent `dt` formulas.
+- **`[widget]` TOML isolated from normal mode**: Scoped `[widget]` `compact`, `inline`, `width`, and `height` settings strictly to widget/inline/snapshot modes in `resolve_policy()` so configuring widget defaults never hijacks normal interactive sessions or breaks terminal resize.
+- **Dynamic compact scaling on terminal resize**: Recomputed compact profiles idempotently on `Event::Resize` without compounding physics/radius scales or reinitializing the simulation.
+- **Inline renderer height tracking**: Tracked `last_rendered_rows` across `HalfBlockRenderer`, `BlockRenderer`, and `BrailleRenderer`, emitted `\x1b[K` per row and `\x1b[J` on viewport shrink, and printed a clean trailing newline on inline exit.
+- **Linux runtime ALSA packaging dependencies**: Added `Depends: libc6, libasound2t64 | libasound2` to `.deb` control metadata and `depends=('gcc-libs' 'alsa-lib')` / `makedepends=('cargo' 'git' 'pkgconf')` across Arch/AUR `PKGBUILD` and `.SRCINFO` files; fixed `Apache-2.0` license and tarball directory (`ZenLavaTerm-$pkgver`) in `packaging/arch/` and `packaging/aur/`.
 - **Audio-reactive boom/shimmer & WASAPI pause handling**: Added edge-detonated bass shockwaves with inward rebound and soft-music radius/temperature shimmer in `Simulation::apply_audio_signals`; decayed idle WASAPI loopback ring buffers to silence after 120ms without new samples; ignored non-fatal `cpal::ErrorKind::Xrun` / `DeviceChanged` / `RealtimeDenied` callbacks so pausing playback does not trigger synthetic fallback beats.
 - **CLI argument validation & conflict enforcement**: Applied CLI overrides (`--blobs`, `--renderer`, `--fps`, `--width`/`--height`, `--shockwave-force`, `--stir-force`) into `Config` and ran `Config::validate()` before simulation startup; rejected explicit `--system` + `--audio` combinations with a clear conflict error; enforced upper bounds on `widget.width`/`widget.height` (`1..=1000`) and `target_fps` (`1..=240`) in `Config::validate()` and `resolve_policy()`.
 - **Terminal cleanup safety & inline rendering**: Added an RAII `TerminalGuard` in `run_event_loop` to restore mouse capture, alternate screen, cursor visibility, and raw mode on any early error return; initialized system and audio providers before entering raw mode; wired `CursorMode::Inline` / `CursorMode::Absolute` into renderers based on `InteractiveMode`.
@@ -26,11 +46,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`Simulation::apply_radius_scale` compounded on repeated calls** (#84): it multiplied `blob.radius` in place, so applying the same scale twice scaled by its square. It now recomputes from the generated base radii, making it idempotent. The bug was latent — no runtime path called it twice on the same simulation — but `Action::Reset` came close.
 - **`cargo clippy -D warnings` failure on newer toolchains** (#84): fixed `clippy::redundant_closure` in `src/audio/native.rs` (`catch_unwind(|| …)` → `catch_unwind(…)`), unblocking the `AGENTS.md` §5 CI gate.
 - **Audio mode retained a stale radius multiplier** (#84): `apply_audio_signals` did not reset `radius_multiplier`, so a radius scale set by system signals would persist if audio signals were ever applied to the same simulation. It now resets to `1.0`. Not reachable today, since `--system` and `--audio` are mutually exclusive.
-
-### Added
-- `scripts/smoke_test_windows.ps1`: Zero-dependency PowerShell automated smoke test suite for Windows (metadata, headless, snapshots, audio enumeration, CLI validation, and theme error checks).
-- `Simulation::nudge_buoyancy(delta)`, `Simulation::base_params()`, and `Simulation::set_base_params()` as the supported entry points for user-driven buoyancy changes and configuration reads/writes.
-- Five regression tests in `src/core/simulation.rs` covering radius variety preservation, config-respect under saturated signals, keyboard offset survival across polls, audio-signal idempotency, and `apply_radius_scale` composition. Five further tests cover `apply_radius_scale` idempotency, the audio radius-multiplier reset, construction preserving the configured buoyancy range, the absence of banked speed-key credit, and compact physics surviving a reactive poll.
 
 ## [1.0.1] - 2026-09-03 — Codebase Hygiene, Dependency Optimization & Patch Release
 

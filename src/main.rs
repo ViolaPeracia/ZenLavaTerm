@@ -8,14 +8,14 @@ use crossterm::{
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use lavaterm::{
-    audio::{create_audio_provider, list_audio_devices},
+    audio::{create_audio_provider, list_audio_devices, AudioSourceKind},
     config::{load_config, AudioConfig},
     core::{Interaction, PhysicsParams, Simulation},
     input::{map_key_event_with_ripple, Action, MouseTracker},
     reactive::default_system_provider,
     render::{
-        rasterize_simulation_options, BlockRenderer, BrailleRenderer, ColorPalette, CursorMode,
-        HalfBlockRenderer, Renderer, VirtualFramebuffer,
+        rasterize_simulation, BlockRenderer, BrailleRenderer, ColorPalette, CursorMode,
+        HalfBlockRenderer, RasterizeOptions, Renderer, VirtualFramebuffer,
     },
     theme::{load_custom_theme_file, resolve_theme},
     widget::{
@@ -89,12 +89,17 @@ struct Cli {
     #[arg(long)]
     audio: bool,
 
-    /// Target audio input or capture device name
+    /// Target audio input or capture device name (implicitly enables --audio)
     #[arg(long, value_name = "DEVICE")]
     audio_device: Option<String>,
-    /// Capture system audio (loopback) instead of microphone
+
+    /// Capture system audio (loopback) instead of microphone on Windows WASAPI (implicitly enables --audio)
     #[arg(long)]
     audio_loopback: bool,
+
+    /// Exit with an error instead of falling back to synthetic audio when live capture is unavailable
+    #[arg(long)]
+    no_audio_fallback: bool,
 
     /// List available audio capture devices and exit
     #[arg(long)]
@@ -213,11 +218,15 @@ fn setup_signal_handler(_term_flag: Arc<AtomicBool>) {}
 
 struct RuntimeOptions {
     renderer_type: String,
+    theme_label: String,
     fps: u32,
-    threshold: f32,
-    gradient: bool,
+    raster_opts: RasterizeOptions,
+    base_blob_count: usize,
+    force_compact: bool,
+    adapt_blobs: bool,
     system_reactive: bool,
     audio_reactive: bool,
+    allow_audio_fallback: bool,
     audio_config: AudioConfig,
     poll_interval_ms: u64,
     mouse_enabled: bool,
@@ -226,31 +235,110 @@ struct RuntimeOptions {
     stir_force: f32,
 }
 
+fn apply_viewport_compact_profile(
+    sim: &mut Simulation,
+    cols: u16,
+    rows: u16,
+    opts: &RuntimeOptions,
+) {
+    if opts.adapt_blobs && should_compact(cols, rows, opts.force_compact) {
+        let profile = CompactScaler::calculate_profile(cols, rows, opts.base_blob_count);
+        CompactScaler::adapt_simulation(&profile, sim);
+    } else {
+        sim.apply_compact_scales(opts.base_blob_count, 1.0, 1.0, 1.0);
+    }
+}
+
+fn render_status_overlay(
+    out: &mut impl Write,
+    cols: u16,
+    rows: u16,
+    show_hud: bool,
+    opts: &RuntimeOptions,
+    audio_source: Option<AudioSourceKind>,
+) -> std::io::Result<()> {
+    if rows < 4 || cols < 28 {
+        return Ok(());
+    }
+    let max_cols = cols as usize;
+
+    if show_hud {
+        let mode_str = if let Some(src) = audio_source {
+            format!("audio: {}", src.label())
+        } else if opts.system_reactive {
+            "system".to_string()
+        } else {
+            "ambient".to_string()
+        };
+        let raw = format!(
+            " {} fps | {} | {} | {}  (Ctrl+i hide) ",
+            opts.fps, opts.theme_label, opts.renderer_type, mode_str
+        );
+        let text: String = raw.chars().take(max_cols).collect();
+        write!(
+            out,
+            "\x1b[{};1H\x1b[48;2;14;14;22m\x1b[38;2;205;210;228m{text}\x1b[0m",
+            rows
+        )?;
+    } else if audio_source == Some(AudioSourceKind::Synthetic) {
+        let badge = " [audio: synthetic fallback] ";
+        if max_cols >= badge.len() {
+            let start_col = max_cols - badge.len() + 1;
+            write!(
+                out,
+                "\x1b[{};{}H\x1b[48;2;42;24;16m\x1b[38;2;255;180;90m{badge}\x1b[0m",
+                rows, start_col
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
 fn run_headless(
     sim: &mut Simulation,
     palette: &ColorPalette,
     frames: usize,
     opts: &RuntimeOptions,
 ) -> Result<()> {
-    println!(
-        "Starting LavaTerm headless simulation ({} frames, system={}, audio={})...",
-        frames, opts.system_reactive, opts.audio_reactive
-    );
-    let mut fb = VirtualFramebuffer::new(80, 48, palette.background);
-    let dt = 1.0 / 30.0;
     let mut sys_provider = if opts.system_reactive {
         Some(default_system_provider())
     } else {
         None
     };
     let mut audio_provider = if opts.audio_reactive {
-        Some(create_audio_provider(&opts.audio_config)?)
+        Some(create_audio_provider(
+            &opts.audio_config,
+            opts.allow_audio_fallback,
+        )?)
     } else {
         None
     };
 
+    if let Some(ref ap) = audio_provider {
+        println!(
+            "Starting LavaTerm headless simulation ({} frames, system={}, audio=true [{}])...",
+            frames,
+            opts.system_reactive,
+            ap.source_kind().label()
+        );
+    } else {
+        println!(
+            "Starting LavaTerm headless simulation ({} frames, system={}, audio={})...",
+            frames, opts.system_reactive, opts.audio_reactive
+        );
+    }
+
+    let mut fb = VirtualFramebuffer::new(80, 48, palette.background);
+    let dt = 1.0 / 30.0;
+
     for frame in 0..frames {
         if let Some(ref mut ap) = audio_provider {
+            if !opts.allow_audio_fallback && ap.source_kind() == AudioSourceKind::Synthetic {
+                return Err(LavaError::Audio(
+                    "Audio capture disconnected and --no-audio-fallback is set".to_string(),
+                ));
+            }
             let audio_sig = ap.poll_signals();
             sim.step_audio(dt, &audio_sig);
         } else if let Some(ref mut sp) = sys_provider {
@@ -259,7 +347,7 @@ fn run_headless(
         } else {
             sim.step(dt);
         }
-        rasterize_simulation_options(sim, &mut fb, palette, opts.threshold, opts.gradient);
+        rasterize_simulation(sim, &mut fb, palette, &opts.raster_opts);
         if frame % 20 == 0 || frame == frames - 1 {
             println!(
                 "  [Frame {:03}/{:03}] Sim Time: {:.2}s | Blobs: {} | Active pixels in canvas: {}",
@@ -313,7 +401,10 @@ fn run_event_loop(
         None
     };
     let mut audio_provider = if opts.audio_reactive {
-        Some(create_audio_provider(&opts.audio_config)?)
+        Some(create_audio_provider(
+            &opts.audio_config,
+            opts.allow_audio_fallback,
+        )?)
     } else {
         None
     };
@@ -355,6 +446,8 @@ fn run_event_loop(
         }
     };
 
+    apply_viewport_compact_profile(&mut sim, cols, rows, &opts);
+
     let (v_width, v_height) = framebuffer_dimensions(cols, rows, &opts.renderer_type);
     let mut fb = VirtualFramebuffer::new(v_width, v_height, palette.background);
 
@@ -374,6 +467,7 @@ fn run_event_loop(
     let target_frame_duration = Duration::from_secs_f32(1.0 / opts.fps as f32);
     let mut last_instant = Instant::now();
     let mut paused = false;
+    let mut show_hud = false;
 
     let loop_result = (|| -> Result<()> {
         loop {
@@ -390,22 +484,11 @@ fn run_event_loop(
                     Event::Key(key) => match map_key_event_with_ripple(key, opts.keyboard_ripple) {
                         Action::Quit => return Ok(()),
                         Action::TogglePause => paused = !paused,
-                        Action::SpeedUp => {
-                            sim.nudge_buoyancy(0.1);
-                        }
-                        Action::SlowDown => {
-                            sim.nudge_buoyancy(-0.1);
-                        }
+                        Action::ToggleHud => show_hud = !show_hud,
+                        Action::SpeedUp => sim.nudge_buoyancy(0.1),
+                        Action::SlowDown => sim.nudge_buoyancy(-0.1),
                         Action::Reset => {
-                            let count = sim.blobs.len();
-                            let radius_scale = sim.radius_scale;
-                            // Restore configured physics, not reactive-modulated values.
-                            // `radius_scale` is preserved because it derives from viewport
-                            // geometry and would be recomputed identically on restart;
-                            // the user buoyancy offset is deliberately cleared, so Reset
-                            // returns the simulation to a pristine configured state.
-                            sim = Simulation::new(sim.base_params(), count, DEFAULT_SEED);
-                            sim.apply_radius_scale(radius_scale);
+                            sim.reset(DEFAULT_SEED);
                             mouse_tracker.reset();
                         }
                         Action::Ripple(intensity) => {
@@ -435,6 +518,7 @@ fn run_event_loop(
                         let (new_w, new_h) =
                             framebuffer_dimensions(cols, rows, &opts.renderer_type);
                         fb.resize(new_w, new_h, palette.background);
+                        apply_viewport_compact_profile(&mut sim, cols, rows, &opts);
                         mouse_tracker.reset();
                     }
                     _ => {}
@@ -448,6 +532,14 @@ fn run_event_loop(
                 }
             }
 
+            let active_audio_source = audio_provider.as_ref().map(|ap| ap.source_kind());
+            if !opts.allow_audio_fallback && active_audio_source == Some(AudioSourceKind::Synthetic)
+            {
+                return Err(LavaError::Audio(
+                    "Audio capture disconnected and --no-audio-fallback is set".to_string(),
+                ));
+            }
+
             if !paused {
                 if let Some(ref mut ap) = audio_provider {
                     let audio_sig = ap.poll_signals();
@@ -459,21 +551,29 @@ fn run_event_loop(
                 }
             }
 
-            rasterize_simulation_options(&sim, &mut fb, &palette, opts.threshold, opts.gradient);
+            rasterize_simulation(&sim, &mut fb, &palette, &opts.raster_opts);
 
             renderer
                 .render(&fb, &mut out)
                 .map_err(|e| LavaError::Render(e.to_string()))?;
+
+            if is_fullscreen {
+                render_status_overlay(&mut out, cols, rows, show_hud, &opts, active_audio_source)?;
+            }
+
             out.flush()?;
 
             let elapsed = now.elapsed();
             if elapsed < target_frame_duration {
-                // ponytail: thread::sleep for frame cadence; spin-wait/high-precision timer if jitter occurs
                 std::thread::sleep(target_frame_duration - elapsed);
             }
         }
     })();
 
+    // Ensure shell prompt starts cleanly below inline output upon exit.
+    if !is_fullscreen {
+        let _ = out.write_all(b"\r\n");
+    }
     let _ = out.flush();
     drop(out);
     drop(guard);
@@ -484,8 +584,11 @@ fn run_event_loop(
 fn main() -> std::process::ExitCode {
     let cli = Cli::parse();
 
-    if cli.system && cli.audio {
-        eprintln!("Configuration/Policy error: Conflict: --system and --audio cannot be combined");
+    let cli_audio_requested = cli.audio || cli.audio_loopback || cli.audio_device.is_some();
+    if cli.system && cli_audio_requested {
+        eprintln!(
+            "Configuration/Policy error: Conflict: --system cannot be combined with audio flags (--audio, --audio-loopback, --audio-device)"
+        );
         return std::process::ExitCode::FAILURE;
     }
 
@@ -566,12 +669,10 @@ fn main() -> std::process::ExitCode {
 
     let base_blob_count = config.simulation.blobs;
     let renderer_type = config.render.renderer.clone();
-    let audio_reactive = cli.audio || (!cli.system && config.audio.enabled);
+    let audio_reactive = cli_audio_requested || (!cli.system && config.audio.enabled);
     let system_reactive = !audio_reactive && (cli.system || config.reactive.enabled);
     let mut audio_config = config.audio.clone();
-    if cli.audio {
-        audio_config.enabled = true;
-    }
+    audio_config.enabled = audio_reactive;
     if cli.audio_loopback {
         audio_config.loopback = true;
     }
@@ -602,9 +703,9 @@ fn main() -> std::process::ExitCode {
         thermal_transfer_rate: config.simulation.thermal_transfer_rate,
     };
 
-    let palette = if let Some(ref theme_spec) = cli.theme {
+    let (palette, theme_label) = if let Some(ref theme_spec) = cli.theme {
         match resolve_theme(theme_spec) {
-            Ok(p) => p,
+            Ok(p) => (p, theme_spec.clone()),
             Err(e) => {
                 eprintln!("Error resolving theme '{theme_spec}': {e}");
                 return std::process::ExitCode::FAILURE;
@@ -612,7 +713,7 @@ fn main() -> std::process::ExitCode {
         }
     } else if let Some(ref path) = config.theme.path {
         match load_custom_theme_file(path) {
-            Ok(p) => p,
+            Ok(p) => (p, "custom".to_string()),
             Err(e) => {
                 eprintln!("Error loading theme file '{}': {e}", path.display());
                 return std::process::ExitCode::FAILURE;
@@ -620,14 +721,14 @@ fn main() -> std::process::ExitCode {
         }
     } else if let Some(ref theme_name) = config.theme.name {
         match resolve_theme(theme_name) {
-            Ok(p) => p,
+            Ok(p) => (p, theme_name.clone()),
             Err(e) => {
                 eprintln!("Error resolving theme '{theme_name}': {e}");
                 return std::process::ExitCode::FAILURE;
             }
         }
     } else {
-        config.palette
+        (config.palette, "lava".to_string())
     };
 
     let (initial_cols, initial_rows) = match policy.explicit_dimensions {
@@ -635,27 +736,25 @@ fn main() -> std::process::ExitCode {
         None => terminal::size().unwrap_or((80, 24)),
     };
 
-    let is_compact = should_compact(initial_cols, initial_rows, policy.force_compact);
-    let (blob_count, physics, profile_opt) = if is_compact && policy.adapt_blobs {
-        let profile = CompactScaler::calculate_profile(initial_cols, initial_rows, base_blob_count);
-        let adapted_physics = CompactScaler::adapt_physics(&profile, base_physics);
-        (profile.blob_count, adapted_physics, Some(profile))
-    } else {
-        (base_blob_count, base_physics, None)
-    };
-
-    let mut sim = Simulation::new(physics, blob_count, DEFAULT_SEED);
-    if let Some(profile) = profile_opt {
-        sim.apply_radius_scale(profile.radius_scale);
-    }
+    let raster_opts = RasterizeOptions::for_renderer(
+        &renderer_type,
+        threshold,
+        config.render.gradient,
+        config.render.glow,
+        config.render.molten_pool,
+    );
 
     let opts = RuntimeOptions {
         renderer_type: renderer_type.clone(),
+        theme_label,
         fps: policy.target_fps,
-        threshold,
-        gradient: config.render.gradient,
+        raster_opts,
+        base_blob_count,
+        force_compact: policy.force_compact,
+        adapt_blobs: policy.adapt_blobs,
         system_reactive,
         audio_reactive,
+        allow_audio_fallback: !cli.no_audio_fallback,
         audio_config,
         poll_interval_ms,
         mouse_enabled,
@@ -663,6 +762,9 @@ fn main() -> std::process::ExitCode {
         shockwave_force,
         stir_force,
     };
+
+    let mut sim = Simulation::new(base_physics, base_blob_count, DEFAULT_SEED);
+    apply_viewport_compact_profile(&mut sim, initial_cols, initial_rows, &opts);
 
     let result = match policy.mode {
         ExecutionMode::Snapshot => {

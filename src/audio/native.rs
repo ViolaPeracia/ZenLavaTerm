@@ -32,7 +32,8 @@ pub fn select_capture_device(
     #[cfg(not(target_os = "windows"))]
     if loopback {
         return Err(LavaError::Audio(
-            "Loopback capture is only supported natively on Windows".into(),
+            "System audio loopback (--audio-loopback) is supported natively on Windows WASAPI only. On Linux, pass --audio --audio-device <monitor_source> (run --list-audio-devices to see available endpoints)."
+                .into(),
         ));
     }
 
@@ -109,7 +110,8 @@ impl NativeAudioCapture {
         #[cfg(not(target_os = "windows"))]
         if loopback {
             return Err(LavaError::Audio(
-                "Loopback capture is only supported natively on Windows".into(),
+                "System audio loopback (--audio-loopback) is supported natively on Windows WASAPI only. On Linux, pass --audio --audio-device <monitor_source> (run --list-audio-devices to see available endpoints)."
+                    .into(),
             ));
         }
 
@@ -341,9 +343,7 @@ mod tests {
             match res {
                 Err(err) => match err {
                     LavaError::Audio(msg) => {
-                        assert!(
-                            msg.contains("Loopback capture is only supported natively on Windows")
-                        )
+                        assert!(msg.contains("Windows WASAPI"))
                     }
                     _ => panic!("Expected Audio error"),
                 },

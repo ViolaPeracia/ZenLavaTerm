@@ -19,8 +19,12 @@ pub fn load_from_path<P: AsRef<Path>>(path: P) -> Result<Config> {
         ))
     })?;
 
-    let config: Config = toml::from_str(&content)
-        .map_err(|e| LavaError::Config(format!("Failed to parse config TOML: {e}")))?;
+    let config: Config = toml::from_str(&content).map_err(|e| {
+        LavaError::Config(format!(
+            "Failed to parse config TOML at '{}': {e}",
+            path_ref.display()
+        ))
+    })?;
     config.validate().map_err(LavaError::Config)?;
     Ok(config)
 }

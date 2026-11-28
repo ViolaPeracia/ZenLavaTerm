@@ -8,7 +8,7 @@ use lavaterm::{
     core::{PhysicsParams, Simulation},
     render::{
         rasterize_simulation, BlockRenderer, BrailleRenderer, ColorPalette, HalfBlockRenderer,
-        Renderer, VirtualFramebuffer,
+        RasterizeOptions, Renderer, VirtualFramebuffer,
     },
 };
 
@@ -33,7 +33,11 @@ fn test_end_to_end_simulation_and_rasterization() {
     }
 
     // Rasterize
-    rasterize_simulation(&sim, &mut fb, &palette, config.simulation.threshold);
+    let opts = RasterizeOptions {
+        threshold: config.simulation.threshold,
+        ..RasterizeOptions::default()
+    };
+    rasterize_simulation(&sim, &mut fb, &palette, &opts);
 
     // Test Half-Block rendering
     let mut hb_renderer = HalfBlockRenderer::new();
@@ -65,7 +69,14 @@ fn test_end_to_end_simulation_and_rasterization() {
 
     // Test Braille rendering
     let mut braille_fb = VirtualFramebuffer::new(80, 40, palette.background);
-    rasterize_simulation(&sim, &mut braille_fb, &palette, config.simulation.threshold);
+    let braille_opts = RasterizeOptions::for_renderer(
+        "braille",
+        config.simulation.threshold,
+        config.render.gradient,
+        config.render.glow,
+        config.render.molten_pool,
+    );
+    rasterize_simulation(&sim, &mut braille_fb, &palette, &braille_opts);
     let mut braille_renderer = BrailleRenderer::new();
     let mut braille_out = Vec::new();
     braille_renderer
@@ -92,7 +103,7 @@ fn test_system_reactive_integration() {
     for _ in 0..10 {
         let signals = provider.poll_signals();
         sim.step_reactive(0.033, &signals);
-        rasterize_simulation(&sim, &mut fb, &palette, 1.0);
+        rasterize_simulation(&sim, &mut fb, &palette, &RasterizeOptions::default());
     }
 
     assert!(sim.elapsed_time > 0.0);
@@ -119,7 +130,7 @@ fn test_audio_reactive_integration() {
     for _ in 0..15 {
         let audio_sig = provider.poll_signals();
         sim.step_audio(0.033, &audio_sig);
-        rasterize_simulation(&sim, &mut fb, &palette, 1.0);
+        rasterize_simulation(&sim, &mut fb, &palette, &RasterizeOptions::default());
     }
 
     assert!(sim.elapsed_time > 0.0);
@@ -173,7 +184,7 @@ fn test_theme_engine_integration() {
     let mut sim = Simulation::new(PhysicsParams::default(), 6, 999);
     let mut fb = VirtualFramebuffer::new(40, 20, pal_json.background);
     sim.step(0.033);
-    rasterize_simulation(&sim, &mut fb, &pal_json, 1.0);
+    rasterize_simulation(&sim, &mut fb, &pal_json, &RasterizeOptions::default());
     assert_eq!(fb.get_pixel(0, 0), Some(pal_json.background));
 
     // Clean up
@@ -225,7 +236,7 @@ fn test_phase9_compact_mode_integration() {
 
     for _ in 0..10 {
         sim.step(0.033);
-        rasterize_simulation(&sim, &mut fb, &palette, 1.0);
+        rasterize_simulation(&sim, &mut fb, &palette, &RasterizeOptions::default());
     }
 
     assert!(sim.elapsed_time > 0.0);
@@ -318,7 +329,7 @@ fn test_phase10_interactive_physics_integration() {
     // Step and rasterize
     for _ in 0..10 {
         sim.step(0.033);
-        rasterize_simulation(&sim, &mut fb, &palette, 1.0);
+        rasterize_simulation(&sim, &mut fb, &palette, &RasterizeOptions::default());
     }
 
     assert!(sim.elapsed_time > 0.0);
@@ -490,11 +501,15 @@ fn test_phase11_cross_platform_headless_execution() {
     let mut fb = VirtualFramebuffer::new(60, 30, palette.background);
     let mut provider = default_system_provider();
 
+    let opts = RasterizeOptions {
+        threshold: config.simulation.threshold,
+        ..RasterizeOptions::default()
+    };
     let dt = 1.0 / 30.0;
     for _ in 0..30 {
         let signals = provider.poll_signals();
         sim.step_reactive(dt, &signals);
-        rasterize_simulation(&sim, &mut fb, &palette, config.simulation.threshold);
+        rasterize_simulation(&sim, &mut fb, &palette, &opts);
     }
 
     assert!(sim.elapsed_time > 0.9);
@@ -628,7 +643,7 @@ fn test_phase12_unified_audio_runtime_and_device_enumeration() {
         device: None,
         loopback: false,
     };
-    let mut disabled_provider = create_audio_provider(&disabled_cfg).unwrap();
+    let mut disabled_provider = create_audio_provider(&disabled_cfg, true).unwrap();
     assert!(!disabled_provider.is_live());
     assert_eq!(disabled_provider.provider_name(), "synthetic");
     let disabled_signals = disabled_provider.poll_signals();
@@ -641,7 +656,7 @@ fn test_phase12_unified_audio_runtime_and_device_enumeration() {
         device: None,
         loopback: false,
     };
-    let mut enabled_provider = create_audio_provider(&enabled_cfg).unwrap();
+    let mut enabled_provider = create_audio_provider(&enabled_cfg, true).unwrap();
     let signals = enabled_provider.poll_signals();
     assert!(signals.bass.is_finite());
     assert!(signals.mid.is_finite());
@@ -944,8 +959,9 @@ fn test_phase12_audio_pipeline_full_e2e_samples_to_render() {
     );
 
     // 6. Stage 5: Rasterize to framebuffer and verify divergence
-    rasterize_simulation(&sim_silent, &mut fb_silent, &palette, 1.0);
-    rasterize_simulation(&sim_audio, &mut fb_audio, &palette, 1.0);
+    let opts = RasterizeOptions::default();
+    rasterize_simulation(&sim_silent, &mut fb_silent, &palette, &opts);
+    rasterize_simulation(&sim_audio, &mut fb_audio, &palette, &opts);
 
     let silent_pixels: Vec<_> = fb_silent.as_slice().to_vec();
     let audio_pixels: Vec<_> = fb_audio.as_slice().to_vec();
@@ -987,6 +1003,28 @@ fn test_cli_validation_rejects_invalid_arguments() {
         ],
         &["--headless", "--frames", "1", "--shockwave-force", "NaN"],
         &["--headless", "--frames", "1", "--system", "--audio"],
+        &[
+            "--headless",
+            "--frames",
+            "1",
+            "--system",
+            "--audio-loopback",
+        ],
+        &[
+            "--headless",
+            "--frames",
+            "1",
+            "--system",
+            "--audio-device",
+            "NonExistent",
+        ],
+        &[
+            "--headless",
+            "--frames",
+            "1",
+            "--audio-device",
+            "__Lavaterm_NonExistent_Device_999__",
+        ],
     ];
 
     for args in invalid_cases {
@@ -1000,6 +1038,118 @@ fn test_cli_validation_rejects_invalid_arguments() {
             args,
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
+fn test_v110_widget_toml_isolated_from_normal_mode() {
+    use lavaterm::widget::{resolve_policy, ExecutionMode, PolicyInput};
+
+    let input = PolicyInput {
+        cli_widget: false,
+        toml_render_fps: 60,
+        toml_widget_fps: 15,
+        toml_widget_compact: true,
+        toml_widget_inline: true,
+        toml_widget_width: Some(40),
+        toml_widget_height: Some(12),
+        ..Default::default()
+    };
+    let policy = resolve_policy(&input).expect("resolve normal policy");
+    assert_eq!(policy.mode, ExecutionMode::Interactive);
+    assert_eq!(policy.target_fps, 60);
+    assert!(!policy.force_compact);
+    assert_eq!(policy.explicit_dimensions, None);
+}
+
+#[test]
+fn test_v110_inline_height_shrink_and_stream_lf_contract() {
+    use lavaterm::render::CursorMode;
+
+    let palette = ColorPalette::default();
+    let fb_tall = VirtualFramebuffer::new(12, 8, palette.background);
+    let fb_short = VirtualFramebuffer::new(12, 4, palette.background);
+
+    let mut hb = HalfBlockRenderer::with_cursor_mode(CursorMode::Inline);
+    let mut out1 = Vec::new();
+    hb.render(&fb_tall, &mut out1).expect("tall inline render");
+    let mut out2 = Vec::new();
+    hb.render(&fb_short, &mut out2)
+        .expect("short inline render");
+    let s2 = String::from_utf8_lossy(&out2);
+    assert!(
+        s2.starts_with("\r\x1b[3A"),
+        "Inline renderer must rewind by prior 4-row height (3 lines up), got: {:?}",
+        &s2[..s2.len().min(32)]
+    );
+    assert!(
+        s2.contains("\x1b[J"),
+        "Inline renderer must clear leftover rows when shrinking"
+    );
+
+    let mut stream_block = BlockRenderer::with_cursor_mode(CursorMode::Stream);
+    let mut stream_out = Vec::new();
+    stream_block
+        .render(&fb_short, &mut stream_out)
+        .expect("stream block render");
+    let stream_str = String::from_utf8_lossy(&stream_out);
+    assert!(
+        !stream_str.contains('\r'),
+        "CursorMode::Stream must use LF-only line endings"
+    );
+}
+
+#[test]
+fn test_v110_config_rejects_unknown_field_with_file_path() {
+    use lavaterm::config::load_from_path;
+    use std::fs;
+
+    let temp_dir = std::env::temp_dir();
+    let bad_file = temp_dir.join(format!("lavaterm_unknown_key_{}.toml", std::process::id()));
+    fs::write(&bad_file, "[render]\nglo = true\n").expect("write bad config");
+
+    let err = load_from_path(&bad_file)
+        .expect_err("unknown key must fail")
+        .to_string();
+    let _ = fs::remove_file(&bad_file);
+
+    assert!(
+        err.contains("lavaterm_unknown_key_"),
+        "Error message must include config file path, got: {err}"
+    );
+}
+
+#[test]
+fn test_v110_audio_loopback_auto_enables_audio_flag() {
+    use std::process::Command;
+
+    let bin = env!("CARGO_BIN_EXE_lavaterm");
+    let output = Command::new(bin)
+        .args(["--headless", "--frames", "5", "--audio-loopback"])
+        .output()
+        .expect("execute lavaterm");
+
+    #[cfg(target_os = "windows")]
+    {
+        assert!(
+            output.status.success(),
+            "Windows --audio-loopback should auto-enable audio cleanly.\nstdout: {}\nstderr: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("audio=true"),
+            "Expected audio=true in headless summary, got: {stdout}"
+        );
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        assert!(
+            !output.status.success(),
+            "Non-Windows --audio-loopback must fail fast with actionable error"
         );
     }
 }

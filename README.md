@@ -3,7 +3,7 @@
 [![CI](https://github.com/ViolaPeracia/ZenLavaTerm/actions/workflows/ci.yml/badge.svg)](https://github.com/ViolaPeracia/ZenLavaTerm/actions/workflows/ci.yml)
 [![Release](https://github.com/ViolaPeracia/ZenLavaTerm/actions/workflows/release.yml/badge.svg)](https://github.com/ViolaPeracia/ZenLavaTerm/releases)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Rust: 1.85+](https://img.shields.io/badge/Rust-1.85%2B-orange.svg)](https://www.rust-lang.org/)
+[![Rust: 1.86+](https://img.shields.io/badge/Rust-1.86%2B-orange.svg)](https://www.rust-lang.org/)
 
 <img src="assets/lavaterm-banner.svg" alt="LavaTerm ambient lava visualization" width="100%">
 
@@ -11,17 +11,17 @@ LavaTerm (`lavaterm`) is a terminal-native ambient lava lamp and metaball visual
 
 ## Features
 
-- Continuous 2D metaball simulation with thermal buoyancy, viscous damping, and boundary reflections.
+- Continuous 2D metaball simulation with thermal buoyancy, viscous damping, boundary reflections, undulating molten bottom pool, and soft ambient edge glow.
 - Three terminal renderers: `halfblock` (default), `block`, and `braille` (`U+2800`..`U+28FF`).
 - 12 built-in theme presets (`lava`, `ocean`, `cyberpunk`, `synthwave`, `nord`, `forest`, `monochrome`, `matrix`, `sunset`, `dracula`, `catppuccin`, `tokyo-night`), plus `auto`, `pywal`, `wallust`, and custom JSON or TOML palettes.
 - System telemetry mode (`--system`) mapping CPU, RAM, and battery state to fluid dynamics.
-- FFT audio mode (`--audio`) mapping bass, mid, and treble bands, with Windows WASAPI desktop loopback (`--audio-loopback`).
-- Display modes for full-screen, `--compact`, `--widget` (15 FPS), `--inline`, `--snapshot`, and `--headless`.
+- FFT audio mode (`--audio`) mapping bass, mid, and treble bands, with Windows WASAPI desktop loopback (`--audio-loopback`) and optional strict capture (`--no-audio-fallback`).
+- Display modes for full-screen, `--compact`, `--widget` (15 FPS), `--inline`, `--snapshot`, and `--headless`, plus a toggleable 1-line status HUD (`Ctrl+i` / `Tab`).
 - Mouse and keyboard interaction for shockwaves, fluid stirring, thermal pulses, and buoyancy control.
 
 ## Requirements
 
-- Rust 1.85+ (`cargo` and `rustc`) when building from source.
+- Rust 1.86+ (`cargo` and `rustc`) when building from source.
 - A terminal emulator with 24-bit True Color support (Alacritty, Kitty, WezTerm, Ghostty, Windows Terminal, iTerm2, or modern GNOME Terminal and Konsole).
 - A monospace font with Unicode block and Braille glyph coverage.
 - On Linux source builds: `libasound2-dev` and `pkg-config` for ALSA audio capture.
@@ -88,6 +88,7 @@ lavaterm --headless --frames 30
 | `q`, `Q`, `Esc`, `Ctrl+c` | Quit and restore terminal |
 | `Space`, `p`, `P` | Pause or resume simulation |
 | `r`, `R` | Reset blobs |
+| `Ctrl+i`, `Tab` | Toggle 1-line status HUD (mode, audio source, renderer, FPS) |
 | `+`, `=`, `Up`, `Right` | Increase buoyancy (+0.1) |
 | `-`, `_`, `Down`, `Left` | Decrease buoyancy (-0.1) |
 | Left click | Radial shockwave |
