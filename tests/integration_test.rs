@@ -720,12 +720,35 @@ fn test_phase12_real_audio_mock_stream_feeder_continuous_streaming() {
 
     let mut feeder = MockAudioStreamFeeder::new(ring.clone(), 44100, 2).with_frequency(80.0); // 80Hz bass pulse
 
-    // Start background stream worker feeding 128-frame chunks every 3ms
+    // Start background stream worker feeding 128-frame chunks every 3ms and wait deterministically
+    // until a full 512-sample FFT window has been ingested (eliminates CI thread-scheduling flakes).
     feeder.start_worker(128, 3);
-    thread::sleep(Duration::from_millis(20));
+    let wait_start = std::time::Instant::now();
+    while ring.total_samples_written() < 512 {
+        assert!(
+            wait_start.elapsed() < Duration::from_secs(2),
+            "Feeder worker failed to populate initial 512 samples in time"
+        );
+        thread::sleep(Duration::from_millis(2));
+    }
 
     assert!(provider.is_live());
     assert_eq!(provider.provider_name(), "live");
+
+    // Prime one coherent snapshot so transient Seqlock contention on frame 0 cannot return 0.0
+    let mut primed = false;
+    for _ in 0..20 {
+        let sig = provider.poll_signals();
+        if sig.bass > 0.0 && sig.volume > 0.0 {
+            primed = true;
+            break;
+        }
+        thread::sleep(Duration::from_millis(2));
+    }
+    assert!(
+        primed,
+        "Provider must yield a coherent 80Hz bass snapshot once ring buffer is populated"
+    );
 
     // Simulate 15 visualizer render frames at ~60 FPS
     let mut polled_frames = 0;
