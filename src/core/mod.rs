@@ -8,7 +8,8 @@ pub mod simulation;
 
 pub use field::ScalarField;
 pub use interaction::{
-    apply_ripple, apply_shockwave, apply_stir, apply_thermal_pulse, Interaction,
+    apply_ripple, apply_ripple_at, apply_shockwave, apply_stir, apply_thermal_pulse, Interaction,
+    RippleWave,
 };
 pub use metaball::Blob;
 pub use physics::PhysicsParams;

@@ -32,7 +32,8 @@ pub fn select_capture_device(
     #[cfg(not(target_os = "windows"))]
     if loopback {
         return Err(LavaError::Audio(
-            "Loopback capture is only supported natively on Windows".into(),
+            "System audio loopback (--audio-loopback) is supported natively on Windows WASAPI only. On Linux, pass --audio --audio-device <monitor_source> (run --list-audio-devices to see available endpoints)."
+                .into(),
         ));
     }
 
@@ -109,7 +110,8 @@ impl NativeAudioCapture {
         #[cfg(not(target_os = "windows"))]
         if loopback {
             return Err(LavaError::Audio(
-                "Loopback capture is only supported natively on Windows".into(),
+                "System audio loopback (--audio-loopback) is supported natively on Windows WASAPI only. On Linux, pass --audio --audio-device <monitor_source> (run --list-audio-devices to see available endpoints)."
+                    .into(),
             ));
         }
 
@@ -178,6 +180,24 @@ impl NativeAudioCapture {
                         device.build_input_stream(
                             config,
                             move |data: &[u16], _| rb.push_interleaved_u16(data, channels),
+                            err_fn,
+                            None,
+                        )
+                    }
+                    SampleFormat::I32 => {
+                        let rb = ring_buffer.clone();
+                        device.build_input_stream(
+                            config,
+                            move |data: &[i32], _| rb.push_interleaved_i32(data, channels),
+                            err_fn,
+                            None,
+                        )
+                    }
+                    SampleFormat::F64 => {
+                        let rb = ring_buffer.clone();
+                        device.build_input_stream(
+                            config,
+                            move |data: &[f64], _| rb.push_interleaved_f64(data, channels),
                             err_fn,
                             None,
                         )
@@ -341,9 +361,7 @@ mod tests {
             match res {
                 Err(err) => match err {
                     LavaError::Audio(msg) => {
-                        assert!(
-                            msg.contains("Loopback capture is only supported natively on Windows")
-                        )
+                        assert!(msg.contains("Windows WASAPI"))
                     }
                     _ => panic!("Expected Audio error"),
                 },

@@ -6,8 +6,8 @@
 
 ## 1. Release Identification
 
-- **Current Version**: `1.0.1`
-- **SemVer Tag Scheme**: `^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$` (e.g. `v1.0.1`).
+- **Current Version**: `2.0.0`
+- **SemVer Tag Scheme**: `^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$` (e.g. `v2.0.0`).
 - **Tag Verification Rule**: `.github/workflows/release.yml` strictly enforces that the git tag matches `Cargo.toml` package version. Pre-release tags (`-rc`, `-beta`, `-alpha`) are rejected by the production release workflow and must use `.github/workflows/package.yml`.
 
 ---

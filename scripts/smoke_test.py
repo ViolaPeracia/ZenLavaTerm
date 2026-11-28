@@ -14,9 +14,11 @@ Verifies real binary execution in:
  10. Packaged binaries verification (AppImage, deb, arch pkg)
 """
 
+import argparse
 import fcntl
 import os
 import pty
+import re
 import select
 import signal
 import struct
@@ -25,7 +27,19 @@ import sys
 import termios
 import time
 
-BINARY_PATH = sys.argv[1] if len(sys.argv) > 1 else "./target/release/lavaterm"
+def detect_cargo_version() -> str:
+    cargo_toml = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Cargo.toml")
+    with open(cargo_toml, "r", encoding="utf-8") as fh:
+        for line in fh:
+            match = re.match(r'^version\s*=\s*"([^"]+)"', line.strip())
+            if match:
+                return match.group(1)
+    raise RuntimeError(f"Could not determine version from {cargo_toml}")
+
+BINARY_PATH = "./target/release/lavaterm"
+REQUIRE_PACKAGES = False
+CARGO_VERSION = detect_cargo_version()
+PACKAGE_VERSION = CARGO_VERSION
 
 def log_test(name: str):
     print(f"\n========================================================")
@@ -137,8 +151,11 @@ def run_in_pty(extra_args=None, terminate_via="q", timeout=5.0):
         assert total_bytes >= 10000, f"Expected >= 10,000 bytes of rendered frames, got {total_bytes}"
 
         if terminate_via == "q":
-            print("Sending 'q' keystroke to quit...")
-            os.write(master, b"q")
+            print("Sending Esc keystroke to quit...")
+            os.write(master, b"\x1b")
+        elif terminate_via == "ctrl_q":
+            print("Sending Ctrl+Q keystroke to quit...")
+            os.write(master, b"\x11")
         elif terminate_via == "SIGINT":
             print("Sending SIGINT signal...")
             os.kill(pid, signal.SIGINT)
@@ -194,19 +211,21 @@ def test_interactive_audio():
 
 def test_packaged_artifacts():
     log_test("Packaged Artifacts Verification")
-    expected_appimage = "./dist/ZenLavaTerm-v1.0.1-linux-x86_64.AppImage"
+    expected_appimage = f"./dist/ZenLavaTerm-v{PACKAGE_VERSION}-linux-x86_64.AppImage"
     packages = [
-        (expected_appimage, "Linux AppImage"),
-        ("./target/deb_test/usr/bin/lavaterm", "Debian Package Binary"),
-        ("./target/arch_test/usr/bin/lavaterm", "Arch Linux Package Binary"),
+        (expected_appimage, "Linux AppImage", True),
+        ("./target/deb_test/usr/bin/lavaterm", "Debian Package Binary", True),
+        ("./target/arch_test/usr/bin/lavaterm", "Arch Linux Package Binary", False),
     ]
 
-    for bin_path, desc in packages:
+    for bin_path, desc, required_in_pkg_mode in packages:
         if os.path.exists(bin_path):
             print(f"\nVerifying {desc} ({bin_path})...")
             v_proc = subprocess.run([bin_path, "--version"], capture_output=True, text=True)
             assert v_proc.returncode == 0, f"{desc} --version failed"
-            assert "lavaterm 1.0.1" in v_proc.stdout
+            assert f"lavaterm {CARGO_VERSION}" in v_proc.stdout, (
+                f"Expected 'lavaterm {CARGO_VERSION}', got: {v_proc.stdout}"
+            )
             print(f"  ✅ Version check passed: {v_proc.stdout.strip()}")
 
             h_proc = subprocess.run([bin_path, "--headless", "--frames", "10"], capture_output=True, text=True)
@@ -221,11 +240,36 @@ def test_packaged_artifacts():
                 print(f"  ✅ Interactive PTY launch and clean exit passed")
             finally:
                 BINARY_PATH = prev
+        elif REQUIRE_PACKAGES and required_in_pkg_mode:
+            raise AssertionError(f"Required packaged artifact not found: {bin_path} ({desc})")
         else:
             print(f"Note: {bin_path} not found, skipping {desc}")
 
 def main():
-    print(f"Starting LavaTerm Smoke Test Suite against: {BINARY_PATH}")
+    global BINARY_PATH, REQUIRE_PACKAGES, PACKAGE_VERSION
+    parser = argparse.ArgumentParser(description="LavaTerm Linux PTY & Packaging Smoke Test Suite")
+    parser.add_argument("binary", nargs="?", default="./target/release/lavaterm", help="Path to lavaterm binary")
+    parser.add_argument(
+        "--require-packages",
+        action="store_true",
+        help="Fail instead of skipping when packaged AppImage or extracted DEB binary is missing",
+    )
+    parser.add_argument(
+        "--version",
+        dest="package_version",
+        default=None,
+        help="Override expected packaged artifact version string (defaults to Cargo.toml)",
+    )
+    parsed = parser.parse_args()
+    BINARY_PATH = parsed.binary
+    REQUIRE_PACKAGES = parsed.require_packages
+    if parsed.package_version:
+        PACKAGE_VERSION = parsed.package_version
+
+    print(
+        f"Starting LavaTerm Smoke Test Suite against: {BINARY_PATH} "
+        f"(binary v{CARGO_VERSION}, package v{PACKAGE_VERSION})"
+    )
     assert os.path.exists(BINARY_PATH), f"Target binary not found: {BINARY_PATH}"
 
     test_headless()

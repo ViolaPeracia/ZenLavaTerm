@@ -6,8 +6,8 @@ use lavaterm::{
     core::{PhysicsParams, Simulation},
     reactive::SystemSignals,
     render::{
-        rasterize_simulation, rasterize_simulation_options, BlockRenderer, BrailleRenderer,
-        ColorPalette, HalfBlockRenderer, Renderer, VirtualFramebuffer,
+        rasterize_simulation, BlockRenderer, BrailleRenderer, ColorPalette, HalfBlockRenderer,
+        RasterizeOptions, Renderer, VirtualFramebuffer,
     },
     widget::{CompactProfile, CompactScaler},
 };
@@ -43,22 +43,37 @@ fn bench_rasterization(c: &mut Criterion) {
     let palette = ColorPalette::default();
 
     let mut fb_80x48 = VirtualFramebuffer::new(80, 48, palette.background);
+    let smooth_opts = RasterizeOptions {
+        threshold: 1.0,
+        gradient: true,
+        ambient_glow: true,
+        molten_pool: true,
+        aspect_ratio: 1.0,
+    };
+    let stepped_opts = RasterizeOptions {
+        threshold: 1.0,
+        gradient: false,
+        ambient_glow: false,
+        molten_pool: false,
+        aspect_ratio: 1.0,
+    };
+
     group.bench_function("rasterize_80x48", |b| {
         b.iter(|| {
-            rasterize_simulation(&sim, &mut fb_80x48, &palette, black_box(1.0));
+            rasterize_simulation(&sim, &mut fb_80x48, &palette, black_box(&smooth_opts));
         });
     });
 
     let mut fb_120x60 = VirtualFramebuffer::new(120, 60, palette.background);
     group.bench_function("rasterize_120x60", |b| {
         b.iter(|| {
-            rasterize_simulation(&sim, &mut fb_120x60, &palette, black_box(1.0));
+            rasterize_simulation(&sim, &mut fb_120x60, &palette, black_box(&smooth_opts));
         });
     });
 
     group.bench_function("rasterize_stepped_gradient_80x48", |b| {
         b.iter(|| {
-            rasterize_simulation_options(&sim, &mut fb_80x48, &palette, black_box(1.0), false);
+            rasterize_simulation(&sim, &mut fb_80x48, &palette, black_box(&stepped_opts));
         });
     });
 
@@ -71,7 +86,8 @@ fn bench_renderers(c: &mut Criterion) {
 
     let mut hb_fb = VirtualFramebuffer::new(80, 48, palette.background);
     let sim = Simulation::new(PhysicsParams::default(), 12, 42);
-    rasterize_simulation(&sim, &mut hb_fb, &palette, 1.0);
+    let hb_opts = RasterizeOptions::for_renderer("halfblock", 1.0, true, true, true);
+    rasterize_simulation(&sim, &mut hb_fb, &palette, &hb_opts);
 
     let mut hb_renderer = HalfBlockRenderer::new();
     let mut sink = Vec::with_capacity(64 * 1024);
@@ -98,7 +114,8 @@ fn bench_renderers(c: &mut Criterion) {
     });
 
     let mut braille_fb = VirtualFramebuffer::new(160, 96, palette.background);
-    rasterize_simulation(&sim, &mut braille_fb, &palette, 1.0);
+    let braille_opts = RasterizeOptions::for_renderer("braille", 1.0, true, true, true);
+    rasterize_simulation(&sim, &mut braille_fb, &palette, &braille_opts);
     let mut braille_renderer = BrailleRenderer::new();
     group.bench_function("braille", |b| {
         b.iter(|| {
@@ -134,7 +151,7 @@ fn bench_fft_and_audio(c: &mut Criterion) {
         });
     }
 
-    let analyzer = SpectrumAnalyzer::new(44100, 1024);
+    let mut analyzer = SpectrumAnalyzer::new(44100, 1024);
     let pcm_1024 = vec![0.3f32; 1024];
     group.bench_function("spectrum_analyze_1024", |b| {
         b.iter(|| {
@@ -200,10 +217,11 @@ fn bench_pipeline_and_adaptation(c: &mut Criterion) {
     let audio_sig = AudioSignals::new(0.5, 0.4, 0.3, 0.6);
     let sys_sig = SystemSignals::new(0.4, 0.5, 0.8, 0.2);
 
+    let opts = RasterizeOptions::default();
     group.bench_function("full_frame_audio_halfblock", |b| {
         b.iter(|| {
             sim.step_audio(1.0 / 30.0, &audio_sig);
-            rasterize_simulation(&sim, &mut fb, &palette, 1.0);
+            rasterize_simulation(&sim, &mut fb, &palette, &opts);
             sink.clear();
             hb_renderer.render(&fb, &mut sink).unwrap();
             black_box(sink.len());
@@ -213,7 +231,7 @@ fn bench_pipeline_and_adaptation(c: &mut Criterion) {
     group.bench_function("full_frame_reactive_halfblock", |b| {
         b.iter(|| {
             sim.step_reactive(1.0 / 30.0, &sys_sig);
-            rasterize_simulation(&sim, &mut fb, &palette, 1.0);
+            rasterize_simulation(&sim, &mut fb, &palette, &opts);
             sink.clear();
             hb_renderer.render(&fb, &mut sink).unwrap();
             black_box(sink.len());

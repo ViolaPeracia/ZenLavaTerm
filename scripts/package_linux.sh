@@ -7,7 +7,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-VERSION=$(grep -m 1 '^version = ' "$ROOT_DIR/Cargo.toml" | awk -F '"' '{print $2}')
+VERSION="${VERSION:-$(grep -m 1 '^version = ' "$ROOT_DIR/Cargo.toml" | awk -F '"' '{print $2}')}"
 TARGET_ARCH="x86_64"
 BIN_SRC="${1:-$ROOT_DIR/target/release/lavaterm}"
 
@@ -44,6 +44,7 @@ Version: ${VERSION}
 Section: utils
 Priority: optional
 Architecture: amd64
+Depends: libc6, libasound2t64 | libasound2
 Maintainer: ZenLavaTerm Contributors <https://github.com/ViolaPeracia/ZenLavaTerm>
 Description: Terminal-native ambient lava lamp and metaball visualizer
  A high-performance, terminal-native ambient lava lamp & metaball visualizer
@@ -72,7 +73,24 @@ fi
 
 echo "✅ Created: $OUTPUT_DIR/$DEB_NAME"
 
-# 2. Build .AppImage package
+# 2. Verify shared library dependencies before AppImage bundling
+if command -v ldd >/dev/null 2>&1; then
+    echo "==> Auditing dynamic library dependencies (ldd)..."
+    LDD_OUT="$(ldd "$BIN_SRC")"
+    echo "$LDD_OUT"
+    if echo "$LDD_OUT" | grep -q "not found"; then
+        echo "Error: Binary has unresolved shared library dependencies" >&2
+        exit 1
+    fi
+    UNEXPECTED_LIBS="$(echo "$LDD_OUT" | awk '{print $1}' | grep -Ev '^(linux-vdso\.so\.1|ld-linux-x86-64\.so\.2|/lib64/ld-linux-x86-64\.so\.2|libc\.so\.6|libm\.so\.6|libdl\.so\.2|libpthread\.so\.0|librt\.so\.1|libgcc_s\.so\.1|libasound\.so\.2)$' || true)"
+    if [[ -n "$UNEXPECTED_LIBS" ]]; then
+        echo "Error: Unexpected non-host shared libraries linked into binary:" >&2
+        echo "$UNEXPECTED_LIBS" >&2
+        exit 1
+    fi
+fi
+
+# 3. Build .AppImage package
 APPIMAGE_NAME="ZenLavaTerm-v${VERSION}-linux-${TARGET_ARCH}.AppImage"
 APPDIR="$ROOT_DIR/target/AppDir"
 rm -rf "$APPDIR"
@@ -87,22 +105,27 @@ cp "$ROOT_DIR/packaging/appimage/zenlavaterm.desktop" "$APPDIR/zenlavaterm.deskt
 cp "$ROOT_DIR/assets/lavaterm-banner.svg" "$APPDIR/zenlavaterm.svg"
 cp "$ROOT_DIR/assets/lavaterm-banner.svg" "$APPDIR/usr/share/icons/hicolor/scalable/apps/zenlavaterm.svg"
 
-# If appimagetool is available or downloadable
+# If appimagetool is available or downloadable (pinned release + SHA-256 verification)
 if command -v appimagetool >/dev/null 2>&1; then
     ARCH="$TARGET_ARCH" appimagetool "$APPDIR" "$OUTPUT_DIR/$APPIMAGE_NAME"
 elif [[ -f "$ROOT_DIR/appimagetool" ]]; then
     ARCH="$TARGET_ARCH" "$ROOT_DIR/appimagetool" "$APPDIR" "$OUTPUT_DIR/$APPIMAGE_NAME"
 else
-    echo "==> Downloading appimagetool (v13)..."
-    APPIMAGETOOL_URL="https://github.com/AppImage/AppImageKit/releases/download/13/appimagetool-x86_64.AppImage"
-    curl -fsSL "$APPIMAGETOOL_URL" -o "$ROOT_DIR/target/appimagetool" || \
-        curl -fsSL "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" -o "$ROOT_DIR/target/appimagetool"
-    chmod +x "$ROOT_DIR/target/appimagetool"
+    APPIMAGETOOL_VERSION="1.9.1"
+    APPIMAGETOOL_URL="https://github.com/AppImage/appimagetool/releases/download/${APPIMAGETOOL_VERSION}/appimagetool-x86_64.AppImage"
+    APPIMAGETOOL_SHA256="ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0"
+    APPIMAGETOOL_BIN="$ROOT_DIR/target/appimagetool"
+
+    echo "==> Downloading official AppImage/appimagetool v${APPIMAGETOOL_VERSION}..."
+    curl -fsSL "$APPIMAGETOOL_URL" -o "$APPIMAGETOOL_BIN"
+    echo "${APPIMAGETOOL_SHA256}  ${APPIMAGETOOL_BIN}" | sha256sum -c -
+    chmod +x "$APPIMAGETOOL_BIN"
+    rm -rf "$ROOT_DIR/target/squashfs-root"
     (cd "$ROOT_DIR/target" && ./appimagetool --appimage-extract >/dev/null 2>&1 || true)
     if [[ -d "$ROOT_DIR/target/squashfs-root" ]]; then
         ARCH="$TARGET_ARCH" "$ROOT_DIR/target/squashfs-root/AppRun" "$APPDIR" "$OUTPUT_DIR/$APPIMAGE_NAME"
     else
-        ARCH="$TARGET_ARCH" "$ROOT_DIR/target/appimagetool" "$APPDIR" "$OUTPUT_DIR/$APPIMAGE_NAME"
+        ARCH="$TARGET_ARCH" "$APPIMAGETOOL_BIN" "$APPDIR" "$OUTPUT_DIR/$APPIMAGE_NAME"
     fi
 fi
 chmod +x "$OUTPUT_DIR/$APPIMAGE_NAME"

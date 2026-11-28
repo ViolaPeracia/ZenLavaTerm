@@ -27,7 +27,7 @@ The sample below lists every table and key with its built-in default and valid r
 
 ```toml
 [simulation]
-blobs = 12                    # 1..=128
+blobs = 18                    # 1..=128
 gravity = 0.12                # 0.0..=5.0
 buoyancy = 0.80               # 0.0..=5.0
 viscosity = 0.93              # 0.0..=1.0
@@ -39,6 +39,8 @@ thermal_transfer_rate = 0.40  # >0.0..=5.0
 renderer = "halfblock"        # "halfblock" | "block" | "braille"
 fps = 30                      # 1..=240
 gradient = true               # smooth color interpolation
+glow = true                   # ambient edge aura & bottom furnace glow (auto-off on braille/stepped)
+molten_pool = false           # optional undulating lava pool along the bottom edge
 
 [palette]
 bottom = "#ff3b00"            # heat source (hot)
@@ -61,11 +63,11 @@ loopback = false              # capture system output instead of microphone
 # path = "/path/to/theme.json" # optional custom theme file path
 
 [widget]
-compact = false               # compact layout scaling
+compact = false               # compact layout scaling (widget/inline/snapshot modes only)
 fps = 15                      # 1..=240 (target FPS in widget mode)
-inline = false                # render inline without alternate screen
-# width = 40                  # optional fixed columns (1..=1000)
-# height = 12                 # optional fixed rows (1..=1000)
+inline = false                # render inline without alternate screen (widget/inline modes)
+# width = 40                  # optional fixed columns (1..=1000, widget/inline/snapshot modes)
+# height = 12                 # optional fixed rows (1..=1000, widget/inline/snapshot modes)
 adapt_blobs = true            # scale blob count and physics in compact mode
 
 [interaction]
@@ -74,6 +76,8 @@ keyboard_ripple = true        # ripples on alphanumeric keypresses
 shockwave_force = 1.0         # 0.1..=10.0
 stir_force = 1.0              # 0.1..=10.0
 ```
+
+> **Strict schema checking**: Unknown keys in `config.toml` are rejected with an error naming the config file path so typos do not fail silently. Settings in `[widget]` only apply in `--widget`, `--inline`, or `--snapshot` modes and never override a normal interactive `lavaterm` session or lock its viewport size.
 
 ### Legacy field aliases
 
@@ -90,7 +94,9 @@ Run `lavaterm --help` for the live flag summary from the installed binary. Note 
 
 | Flag | Argument | Description |
 | :--- | :--- | :--- |
-| `-c`, `--config` | `<PATH>` | Path to a custom TOML configuration file. |
+| `-c`, `--config` | `[PATH]` | Without a path, opens the interactive keyboard setup menu to save defaults. With `<PATH>`, loads a custom TOML file. |
+| `--setup` | | Open the interactive keyboard setup menu to edit and save default settings. |
+| `--no-setup` | | Skip the automatic first-run setup wizard. |
 | `-r`, `--renderer` | `<TYPE>` | Renderer backend: `halfblock`, `block`, or `braille`. |
 | `--fps` | `<FPS>` | Target frames per second (`1..=240`). |
 | `--blobs` | `<COUNT>` | Number of metaball blobs (`1..=128`). |
@@ -103,8 +109,9 @@ Run `lavaterm --help` for the live flag summary from the installed binary. Note 
 | `--height` | `<ROWS>` | Explicit viewport height in terminal rows (`1..=1000`). |
 | `--system` | | Enable system-reactive mode (CPU, RAM, battery). |
 | `--audio` | | Enable audio-reactive mode (FFT bass, mid, treble). |
-| `--audio-device` | `<DEVICE>` | Target audio input or capture device name. |
-| `--audio-loopback` | | Capture system output audio (loopback) instead of microphone. |
+| `--audio-device` | `<DEVICE>` | Target audio input or capture device name (automatically enables `--audio`; fails fast if device not found). |
+| `--audio-loopback` | | Capture desktop output audio via Windows WASAPI loopback (automatically enables `--audio`; fails fast on non-Windows). |
+| `--no-audio-fallback` | | Fail immediately if live audio capture cannot start instead of falling back to synthetic beats. |
 | `--list-audio-devices` | | List available audio capture devices and exit. |
 | `--no-mouse` | | Disable mouse click shockwaves, dragging, and scroll pressure. |
 | `--no-ripple` | | Disable keyboard ripples on character keypresses. |

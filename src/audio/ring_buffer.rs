@@ -210,6 +210,20 @@ impl PcmRingBuffer {
         });
     }
 
+    /// Pushes interleaved 32-bit signed integer PCM samples (24/32-bit DACs & PipeWire),
+    /// normalizing to [-1.0, 1.0] and downmixing to mono.
+    pub fn push_interleaved_i32(&self, interleaved_samples: &[i32], channels: usize) {
+        const INV_SCALE: f64 = 1.0 / 2_147_483_648.0;
+        self.push_interleaved_mapped(interleaved_samples, channels, true, |s| {
+            (s as f64 * INV_SCALE) as f32
+        });
+    }
+
+    /// Pushes interleaved 64-bit floating-point PCM samples, downmixing to mono.
+    pub fn push_interleaved_f64(&self, interleaved_samples: &[f64], channels: usize) {
+        self.push_interleaved_mapped(interleaved_samples, channels, true, |s| s as f32);
+    }
+
     /// Reads the most recent `count` samples in chronological order without locking.
     /// Employs an optimistic Seqlock protocol: guarantees that the returned window is a
     /// 100% coherent snapshot and never a torn mix of older and overwritten newer generations.

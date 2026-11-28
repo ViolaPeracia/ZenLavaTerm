@@ -1,19 +1,22 @@
-# ZenLavaTerm Windows MSI packaging script.
+﻿# ZenLavaTerm Windows MSI packaging script.
 # Builds native .msi installer using WiX Toolset and wix/main.wxs.
 
 param (
     [string]$SourceBinaryDir = "target\x86_64-pc-windows-msvc\release",
-    [string]$OutputDir = "dist"
+    [string]$OutputDir = "dist",
+    [string]$Version = ""
 )
 
 $ErrorActionPreference = "Stop"
 
-$VersionMatch = Select-String -Path "Cargo.toml" -Pattern '^version = "([^"]+)"'
-if (-not $VersionMatch) {
-    Write-Error "Could not determine package version from Cargo.toml"
-    exit 1
+if ([string]::IsNullOrWhiteSpace($Version)) {
+    $VersionMatch = Select-String -Path "Cargo.toml" -Pattern '^version = "([^"]+)"'
+    if (-not $VersionMatch) {
+        Write-Error "Could not determine package version from Cargo.toml"
+        exit 1
+    }
+    $Version = $VersionMatch.Matches[0].Groups[1].Value
 }
-$Version = $VersionMatch.Matches[0].Groups[1].Value
 $Arch = "x86_64"
 $MsiName = "ZenLavaTerm-v$Version-windows-$Arch.msi"
 

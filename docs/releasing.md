@@ -10,10 +10,10 @@ Four checks are required on `main`:
 
 1. `Code Quality & Linting (Ubuntu x86_64)`: Runs `cargo fmt --check` and `cargo clippy --all-targets --all-features -- -D warnings`.
 2. `Test Suite (Linux x86_64 glibc)`: Runs `cargo test`, `cargo bench --no-run`, and `python3 scripts/smoke_test.py` against the debug binary.
-3. `Representative Platform (Windows x86_64 (MSVC))`: Runs `cargo test` and `scripts/smoke_test_windows.ps1` (21 smoke test cases).
+3. `Representative Platform (Windows x86_64 (MSVC))`: Runs `cargo test` and `scripts/smoke_test_windows.ps1` (25 smoke test cases).
 4. `Security Vulnerability Audit`: Runs `cargo audit` using a prebuilt binary installed via `taiki-e/install-action`.
 
-CI also runs `Representative Platform (macOS arm64 (Apple Silicon))`, which executes `cargo test`, `cargo run -- --headless --frames 30`, and `cargo check --target x86_64-apple-darwin`.
+CI also runs `Representative Platform (macOS arm64 (Apple Silicon))` (`cargo test`, headless smoke check, Intel cross-target check) and `MSRV Check (Rust 1.86)` (`cargo check --all-targets`).
 
 Two supporting workflows handle PR maintenance:
 
@@ -40,7 +40,9 @@ When a valid release tag is pushed, `release.yml` builds and publishes:
 | macOS (Universal DMG) | `ZenLavaTerm-v<VERSION>-macos-universal.dmg` | `scripts/package_macos.sh` (`lipo` + `hdiutil`) |
 | Homebrew & AUR | `lavaterm.rb`, `PKGBUILD`, `.SRCINFO` | `scripts/update_package_manifests.sh` |
 
-Each platform job writes a `.sha256` sidecar file. The release job verifies every artifact against its sidecar, generates a combined `SHA256SUMS.txt`, attaches SLSA build provenance via `actions/attest-build-provenance`, updates Homebrew and AUR manifests, and publishes the GitHub Release with `softprops/action-gh-release` (`v3.0.4`).
+Each platform job writes a `.sha256` sidecar file. In `package.yml`, Linux packages are verified end-to-end with `scripts/smoke_test.py --require-packages` (including extracted DEB and AppImage PTY runs) and Windows MSI installers are tested with silent `msiexec /i` install, execution, and `/x` uninstall checks. The release job verifies every artifact against its sidecar, generates a combined `SHA256SUMS.txt`, enforces SLSA build provenance via `actions/attest-build-provenance`, updates Homebrew and AUR manifests, and publishes the GitHub Release with `softprops/action-gh-release` (`v3.0.4`).
+
+> **Note**: macOS-specific runtime/packaging follow-ups (CoreAudio minimum version alignment, battery telemetry, and Finder launch verification) are tracked separately and deferred from `v2.0.0`.
 
 ## Release checklist
 
@@ -55,11 +57,12 @@ cargo test
 cargo run -- --headless --frames 30
 ```
 
-4. Commit the version and changelog updates, create an annotated tag, and push:
+4. Commit the version and changelog updates, create an annotated tag, and push `main` and the specific release tag explicitly:
 
 ```bash
 git tag -a vX.Y.Z -m "Release vX.Y.Z"
-git push origin main --tags
+git push origin main
+git push origin vX.Y.Z
 ```
 
 5. Confirm all jobs in the GitHub Actions `Release` workflow succeed and inspect the generated GitHub Release assets and `SHA256SUMS.txt`.

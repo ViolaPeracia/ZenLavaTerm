@@ -35,6 +35,7 @@ impl Rgb {
     }
 
     /// Linearly interpolates between color `a` and `b` by factor `t` in $[0.0, 1.0]$.
+    #[inline]
     pub fn lerp(a: Self, b: Self, t: f32) -> Self {
         let t_clamped = t.clamp(0.0, 1.0);
         let r = (a.r as f32 + (b.r as f32 - a.r as f32) * t_clamped).round() as u8;
@@ -70,7 +71,7 @@ impl<'de> Deserialize<'de> for Rgb {
 
 /// Palette holding gradient anchor colors.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct ColorPalette {
     /// Heat source bottom color (hot).
     pub bottom: Rgb,
@@ -94,6 +95,100 @@ impl Default for ColorPalette {
 }
 
 impl ColorPalette {
+    /// Interpolates the 3-stop thermal ramp (`top -> middle -> bottom`).
+    #[inline]
+    fn sample_thermal_color(&self, temp: f32) -> Rgb {
+        let t = temp.clamp(0.0, 1.0);
+        if t < 0.5 {
+            Rgb::lerp(self.top, self.middle, t * 2.0)
+        } else {
+            Rgb::lerp(self.middle, self.bottom, (t - 0.5) * 2.0)
+        }
+    }
+
+    /// Samples lava color with optional ambient furnace background glow, soft outer halo,
+    /// and additive `glow_boost` (from active typing ripple crests or audio beat pulses).
+    ///
+    /// When `ambient_glow` is `false` (required for 1-bit Braille dot thresholding) or `gradient`
+    /// is `false` (fast stepped mode), pixels below `threshold` return `self.background` exactly.
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub fn sample_lava_surface(
+        &self,
+        temp: f32,
+        field_intensity: f32,
+        threshold: f32,
+        sim_y: f32,
+        gradient: bool,
+        ambient_glow: bool,
+        glow_boost: f32,
+    ) -> Rgb {
+        if !gradient || !ambient_glow {
+            return self.sample_lava_stepped(temp, field_intensity, threshold, gradient);
+        }
+
+        let boost = glow_boost.clamp(0.0, 1.0);
+
+        // Subtle furnace light cast upward from the heated lamp base.
+        let mut bg = if sim_y < 0.36 {
+            let h = ((0.36 - sim_y) / 0.36).clamp(0.0, 1.0);
+            Rgb::lerp(
+                self.background,
+                self.bottom,
+                (h * h * 0.18 + boost * 0.10 * h).min(0.45),
+            )
+        } else {
+            self.background
+        };
+
+        if boost > 0.01 {
+            bg = Rgb::lerp(bg, self.middle, (boost * 0.42).min(0.55));
+        }
+
+        let halo_start = threshold * 0.55;
+        if field_intensity < halo_start {
+            return bg;
+        }
+
+        let base_color = self.sample_thermal_color(temp);
+
+        if field_intensity < threshold {
+            let denom = (threshold - halo_start).max(1e-4);
+            let halo = ((field_intensity - halo_start) / denom).clamp(0.0, 1.0);
+            return Rgb::lerp(
+                bg,
+                base_color,
+                (halo * halo * 0.42 + boost * 0.22).min(0.82),
+            );
+        }
+
+        // Physically-inspired volumetric wax shading:
+        // - Bottom bulb softly under-lights lower droplets toward `self.bottom`.
+        // - Outer rim deepens slightly for curved 3D volume (no inverted white outline).
+        // - Deep core glows with theme-faithful subsurface scattering / incandescence.
+        let bulb = (1.0 - sim_y).clamp(0.0, 1.0);
+        let bulb_sq = bulb * bulb;
+        let lit_base = Rgb::lerp(base_color, self.bottom, bulb_sq * 0.24);
+
+        let depth = ((field_intensity - threshold) / (threshold * 1.4)).clamp(0.0, 1.0);
+        let shaded = if depth < 0.28 {
+            let rim_t = (1.0 - depth / 0.28) * 0.22;
+            Rgb::lerp(lit_base, self.background, rim_t)
+        } else {
+            lit_base
+        };
+
+        let core_norm = ((depth - 0.15) / 0.85).clamp(0.0, 1.0);
+        if core_norm <= 0.0 {
+            return shaded;
+        }
+        let core_strength =
+            (core_norm * core_norm * (0.46 + bulb_sq * 0.24 + boost * 0.24)).clamp(0.0, 0.82);
+        let hot_tint = Rgb::lerp(lit_base, self.bottom, 0.30);
+        let hot_core = Rgb::lerp(hot_tint, Rgb::new(255, 255, 255), 0.40);
+        Rgb::lerp(shaded, hot_core, core_strength)
+    }
+
     /// Samples the gradient based on normalized temperature, field intensity, and gradient smoothing flag.
     pub fn sample_lava_stepped(
         &self,
@@ -117,15 +212,7 @@ impl ColorPalette {
             };
         }
 
-        // Lava color based on temperature: [0.0 = top/cold] -> [0.5 = middle] -> [1.0 = bottom/hot]
-        let t = temp.clamp(0.0, 1.0);
-        let base_color = if t < 0.5 {
-            Rgb::lerp(self.top, self.middle, t * 2.0)
-        } else {
-            Rgb::lerp(self.middle, self.bottom, (t - 0.5) * 2.0)
-        };
-
-        // Edge glow / rim highlights where field intensity is near threshold
+        let base_color = self.sample_thermal_color(temp);
         let edge_factor = ((field_intensity - threshold) / 0.3).clamp(0.0, 1.0);
         Rgb::lerp(Rgb::new(255, 255, 255), base_color, 0.4 + 0.6 * edge_factor)
     }
@@ -182,5 +269,42 @@ mod tests {
         let color_flat = palette.sample_lava_stepped(0.25, 2.0, 1.0, false);
         assert_eq!(color_flat, palette.top);
         assert_ne!(color_grad, palette.top);
+    }
+
+    #[test]
+    fn test_sample_lava_surface_glow_and_braille_isolation() {
+        let palette = ColorPalette::default();
+
+        // Ambient glow disabled (Braille/flat): pixels below threshold stay exact background
+        let no_glow_halo = palette.sample_lava_surface(0.8, 0.85, 1.0, 0.05, true, false, 0.5);
+        assert_eq!(no_glow_halo, palette.background);
+
+        // Ambient glow enabled: halo band blends smoothly above background
+        let halo_color = palette.sample_lava_surface(0.8, 0.85, 1.0, 0.5, true, true, 0.0);
+        assert_ne!(halo_color, palette.background);
+
+        // Furnace glow warms the bottom background while upper empty background stays pure
+        let bottom_bg = palette.sample_lava_surface(0.5, 0.0, 1.0, 0.02, true, true, 0.0);
+        let top_bg = palette.sample_lava_surface(0.5, 0.0, 1.0, 0.90, true, true, 0.0);
+        assert!(bottom_bg.r > palette.background.r);
+        assert_eq!(top_bg, palette.background);
+
+        // Volumetric shading: deep core must be brighter than outer rim (no inverted white outline)
+        let rim = palette.sample_lava_surface(0.7, 1.02, 1.0, 0.4, true, true, 0.0);
+        let core = palette.sample_lava_surface(0.7, 2.6, 1.0, 0.4, true, true, 0.0);
+        let luma = |c: Rgb| c.r as u32 + c.g as u32 + c.b as u32;
+        assert!(
+            luma(core) > luma(rim),
+            "Inner lava core ({core:?}) must glow brighter than outer rim ({rim:?})"
+        );
+    }
+
+    #[test]
+    fn test_palette_rejects_unknown_fields() {
+        let toml_str = r##"
+            bottom = "#ff0000"
+            color1 = "#00ff00"
+        "##;
+        assert!(toml::from_str::<ColorPalette>(toml_str).is_err());
     }
 }

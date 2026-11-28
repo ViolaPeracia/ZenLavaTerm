@@ -1,6 +1,17 @@
 name: Packaging Validation
 
 on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'wix/**'
+      - 'packaging/**'
+      - 'scripts/package_*'
+      - 'scripts/smoke_test*'
+      - '.github/workflows/package.yml'
   workflow_dispatch:
     inputs:
       version_override:
@@ -91,6 +102,15 @@ jobs:
           sha256sum "$APPIMAGE" > "${APPIMAGE}.sha256"
           sha256sum "$DEB" > "${DEB}.sha256"
 
+      - name: Run packaged Linux smoke test suite (AppImage & extracted DEB)
+        env:
+          VERSION: ${{ needs.verify-metadata.outputs.version }}
+        run: |
+          rm -rf target/deb_test
+          mkdir -p target/deb_test
+          dpkg-deb -x "dist/ZenLavaTerm-v${VERSION}-linux-x86_64.deb" target/deb_test
+          python3 scripts/smoke_test.py target/x86_64-unknown-linux-gnu/release/lavaterm --require-packages --version "$VERSION"
+
       - name: Upload Linux validation artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -139,18 +159,55 @@ jobs:
         run: cargo build --release --target x86_64-pc-windows-msvc --verbose
 
       - name: Build Windows MSI Package
-        run: |
-          powershell -ExecutionPolicy Bypass -File scripts/package_windows.ps1 -SourceBinaryDir "target\x86_64-pc-windows-msvc\release" -OutputDir "dist"
-
-      - name: Validate Windows MSI & generate checksum
-        shell: bash
-        working-directory: dist
         env:
           VERSION: ${{ needs.verify-metadata.outputs.version }}
         run: |
-          MSI="ZenLavaTerm-v${VERSION}-windows-x86_64.msi"
-          test -s "$MSI" || { echo "::error::MSI installer is missing or empty"; exit 1; }
-          sha256sum "$MSI" > "${MSI}.sha256"
+          powershell -ExecutionPolicy Bypass -File scripts/package_windows.ps1 -SourceBinaryDir "target\x86_64-pc-windows-msvc\release" -OutputDir "dist" -Version "$env:VERSION"
+
+      - name: Validate Windows MSI install, execution, uninstall & generate checksum
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.verify-metadata.outputs.version }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $msiPath = (Resolve-Path "dist\ZenLavaTerm-v$($env:VERSION)-windows-x86_64.msi").Path
+          if (-not (Test-Path $msiPath) -or ((Get-Item $msiPath).Length -eq 0)) {
+            Write-Error "::error::MSI installer is missing or empty"
+            exit 1
+          }
+
+          $install = Start-Process -FilePath "msiexec.exe" -ArgumentList "/i `"$msiPath`" /qn /norestart /L*v target\msi_install.log" -Wait -PassThru
+          if ($install.ExitCode -ne 0) {
+            Get-Content target\msi_install.log -Tail 40
+            Write-Error "::error::MSI silent install failed with exit code $($install.ExitCode)"
+            exit 1
+          }
+
+          $installedExe = "C:\Program Files\ZenLavaTerm\lavaterm.exe"
+          if (-not (Test-Path $installedExe)) {
+            Write-Error "::error::Installed executable missing at $installedExe"
+            exit 1
+          }
+
+          & $installedExe --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $installedExe --headless --frames 10
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $uninstall = Start-Process -FilePath "msiexec.exe" -ArgumentList "/x `"$msiPath`" /qn /norestart /L*v target\msi_uninstall.log" -Wait -PassThru
+          if ($uninstall.ExitCode -ne 0) {
+            Get-Content target\msi_uninstall.log -Tail 40
+            Write-Error "::error::MSI silent uninstall failed with exit code $($uninstall.ExitCode)"
+            exit 1
+          }
+          if (Test-Path $installedExe) {
+            Write-Error "::error::Installed executable still present after MSI uninstall"
+            exit 1
+          }
+
+          $hash = (Get-FileHash -Path $msiPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          $msiFile = Split-Path -Leaf $msiPath
+          Set-Content -Path "dist\$msiFile.sha256" -Value "$hash  $msiFile" -Encoding ascii
 
       - name: Upload Windows validation artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

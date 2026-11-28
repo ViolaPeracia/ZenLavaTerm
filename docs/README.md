@@ -1,6 +1,6 @@
 # ZenLavaTerm documentation
 
-Index of documentation for ZenLavaTerm (`lavaterm`, crate version `1.0.1`).
+Index of documentation for ZenLavaTerm (`lavaterm`, crate version `2.0.0`).
 
 ## Authority hierarchy
 

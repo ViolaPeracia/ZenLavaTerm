@@ -2,22 +2,21 @@
 
 use crate::core::Simulation;
 use crate::render::{
-    rasterize_simulation_options, BlockRenderer, BrailleRenderer, ColorPalette, CursorMode,
-    HalfBlockRenderer, Renderer, VirtualFramebuffer,
+    rasterize_simulation, BlockRenderer, BrailleRenderer, ColorPalette, CursorMode,
+    HalfBlockRenderer, RasterizeOptions, Renderer, VirtualFramebuffer,
 };
 use crate::{LavaError, Result};
 
-/// Serializes a single frame of the simulation into a standalone ANSI True Color string with explicit gradient control.
-#[allow(clippy::too_many_arguments)]
-pub fn render_snapshot_options(
+/// Serializes a single frame of the simulation using full `RasterizeOptions` (respecting TOML
+/// `glow`, `molten_pool`, `gradient`, `threshold`, and aspect ratio).
+pub fn render_snapshot_with_options(
     sim: &mut Simulation,
     palette: &ColorPalette,
     cols: u16,
     rows: u16,
     renderer_type: &str,
-    threshold: f32,
     warmup_steps: usize,
-    gradient: bool,
+    raster_opts: &RasterizeOptions,
 ) -> Result<String> {
     if cols == 0 || rows == 0 {
         return Err(LavaError::Render(
@@ -39,7 +38,9 @@ pub fn render_snapshot_options(
     };
 
     let mut fb = VirtualFramebuffer::new(v_width, v_height, palette.background);
-    rasterize_simulation_options(sim, &mut fb, palette, threshold, gradient);
+    let effective_opts =
+        raster_opts.with_aspect_ratio(RasterizeOptions::physical_aspect_ratio(cols, rows));
+    rasterize_simulation(sim, &mut fb, palette, &effective_opts);
 
     // 3. Serialize into in-memory ANSI string without absolute cursor positioning
     let mut out = Vec::with_capacity(cols as usize * rows as usize * 30);
@@ -51,6 +52,31 @@ pub fn render_snapshot_options(
     renderer.render(&fb, &mut out)?;
 
     String::from_utf8(out).map_err(|e| LavaError::Render(e.to_string()))
+}
+
+/// Serializes a single frame of the simulation into a standalone ANSI True Color string with explicit gradient control.
+#[allow(clippy::too_many_arguments)]
+pub fn render_snapshot_options(
+    sim: &mut Simulation,
+    palette: &ColorPalette,
+    cols: u16,
+    rows: u16,
+    renderer_type: &str,
+    threshold: f32,
+    warmup_steps: usize,
+    gradient: bool,
+) -> Result<String> {
+    let raster_opts =
+        RasterizeOptions::for_renderer(renderer_type, threshold, gradient, true, false);
+    render_snapshot_with_options(
+        sim,
+        palette,
+        cols,
+        rows,
+        renderer_type,
+        warmup_steps,
+        &raster_opts,
+    )
 }
 
 /// Serializes a single frame of the simulation into a standalone ANSI True Color string with smooth gradients.
@@ -160,5 +186,34 @@ mod tests {
 
         assert!(out_grad.contains('▀'));
         assert!(out_flat.contains('▀'));
+    }
+
+    #[test]
+    fn test_snapshot_respects_disabled_glow_and_molten_pool() {
+        let palette = ColorPalette::default();
+        let mut sim_with = create_test_sim();
+        let mut sim_without = create_test_sim();
+
+        let opts_on = RasterizeOptions::for_renderer("halfblock", 1.0, true, true, true);
+        let opts_off = RasterizeOptions::for_renderer("halfblock", 1.0, true, false, false);
+
+        let out_on =
+            render_snapshot_with_options(&mut sim_with, &palette, 24, 8, "halfblock", 2, &opts_on)
+                .expect("snapshot with fx succeeds");
+        let out_off = render_snapshot_with_options(
+            &mut sim_without,
+            &palette,
+            24,
+            8,
+            "halfblock",
+            2,
+            &opts_off,
+        )
+        .expect("snapshot without fx succeeds");
+
+        assert_ne!(
+            out_on, out_off,
+            "Snapshot output must reflect configured glow and molten_pool options"
+        );
     }
 }

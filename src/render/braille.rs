@@ -11,7 +11,7 @@ pub struct BrailleRenderer {
     last_fg: Option<Rgb>,
     last_bg: Option<Rgb>,
     cursor_mode: CursorMode,
-    has_rendered: bool,
+    last_rendered_rows: Option<usize>,
 }
 
 impl BrailleRenderer {
@@ -29,16 +29,6 @@ impl BrailleRenderer {
     }
 
     /// Computes the 8-bit Braille offset bitmask and average foreground color from an 8-pixel matrix.
-    ///
-    /// Braille standard dot mapping:
-    /// - Dot 1: (0,0) -> 0x01
-    /// - Dot 2: (0,1) -> 0x02
-    /// - Dot 3: (0,2) -> 0x04
-    /// - Dot 4: (1,0) -> 0x08
-    /// - Dot 5: (1,1) -> 0x10
-    /// - Dot 6: (1,2) -> 0x20
-    /// - Dot 7: (0,3) -> 0x40
-    /// - Dot 8: (1,3) -> 0x80
     pub fn compute_cell(
         buffer: &VirtualFramebuffer,
         cell_x: usize,
@@ -104,11 +94,14 @@ impl Renderer for BrailleRenderer {
 
         let bg_color = buffer.background();
 
-        if self.cursor_mode == CursorMode::Inline && self.has_rendered {
-            if term_rows > 1 {
-                write!(writer, "\r\x1b[{}A", term_rows - 1)?;
-            } else if term_rows == 1 {
-                writer.write_all(b"\r")?;
+        let prev_rows = self.last_rendered_rows;
+        if self.cursor_mode == CursorMode::Inline {
+            if let Some(prev) = prev_rows {
+                if prev > 1 {
+                    write!(writer, "\r\x1b[{}A", prev - 1)?;
+                } else if prev == 1 {
+                    writer.write_all(b"\r")?;
+                }
             }
         }
 
@@ -153,10 +146,21 @@ impl Renderer for BrailleRenderer {
                 let encoded = ch.encode_utf8(&mut utf8_buf);
                 writer.write_all(encoded.as_bytes())?;
             }
+
+            if self.cursor_mode == CursorMode::Inline {
+                writer.write_all(b"\x1b[0m\x1b[K")?;
+                self.last_fg = None;
+                self.last_bg = None;
+            }
+        }
+
+        if self.cursor_mode == CursorMode::Inline && prev_rows.is_some_and(|prev| term_rows < prev)
+        {
+            writer.write_all(b"\x1b[J")?;
         }
 
         write!(writer, "\x1b[0m")?;
-        self.has_rendered = true;
+        self.last_rendered_rows = Some(term_rows);
         Ok(())
     }
 }
@@ -170,7 +174,7 @@ mod tests {
         let bg = Rgb::new(10, 10, 10);
         let fb = VirtualFramebuffer::new(2, 4, bg);
         let (ch, fg) = BrailleRenderer::compute_cell(&fb, 0, 0, bg);
-        assert_eq!(ch, '\u{2800}'); // Empty braille pattern
+        assert_eq!(ch, '\u{2800}');
         assert_eq!(fg, None);
     }
 
@@ -179,21 +183,19 @@ mod tests {
         let bg = Rgb::new(0, 0, 0);
         let mut fb = VirtualFramebuffer::new(2, 4, bg);
 
-        // Turn on dot 1 (0, 0)
         let red = Rgb::new(255, 0, 0);
         fb.set_pixel(0, 0, red);
         let (ch1, fg1) = BrailleRenderer::compute_cell(&fb, 0, 0, bg);
-        assert_eq!(ch1, '\u{2801}'); // Dot 1
+        assert_eq!(ch1, '\u{2801}');
         assert_eq!(fg1, Some(red));
 
-        // Turn on all 8 dots
         for y in 0..4 {
             for x in 0..2 {
                 fb.set_pixel(x, y, red);
             }
         }
         let (ch_all, fg_all) = BrailleRenderer::compute_cell(&fb, 0, 0, bg);
-        assert_eq!(ch_all, '\u{28FF}'); // Full 8-dot braille character
+        assert_eq!(ch_all, '\u{28FF}');
         assert_eq!(fg_all, Some(red));
     }
 
@@ -202,7 +204,7 @@ mod tests {
         let mut renderer = BrailleRenderer::new();
         let bg = Rgb::new(0, 0, 0);
         let mut fb = VirtualFramebuffer::new(2, 4, bg);
-        fb.set_pixel(1, 3, Rgb::new(0, 255, 0)); // Dot 8 -> 0x80
+        fb.set_pixel(1, 3, Rgb::new(0, 255, 0));
 
         let mut output = Vec::new();
         renderer.render(&fb, &mut output).expect("Render succeeds");
@@ -217,7 +219,6 @@ mod tests {
         let bg = Rgb::new(10, 10, 20);
         let lava = Rgb::new(255, 80, 0);
         let mut fb = VirtualFramebuffer::new(2, 4, bg);
-        // Top-left pixel (0, 0) is lava, remaining 7 pixels are background.
         fb.set_pixel(0, 0, lava);
 
         let mut renderer = BrailleRenderer::new();
@@ -225,37 +226,32 @@ mod tests {
         renderer.render(&fb, &mut output).expect("Render succeeds");
 
         let text = String::from_utf8_lossy(&output);
-        // Only dot 1 (0x01 -> U+2801) should be lit, not inverted to 7 dots (0xFE -> U+28FE).
-        assert!(
-            text.contains('\u{2801}'),
-            "Expected single dot U+2801, got: {text:?}"
-        );
-        assert!(
-            !text.contains('\u{28FE}'),
-            "Braille cell must not invert when top-left pixel is lava: {text:?}"
-        );
+        assert!(text.contains('\u{2801}'));
+        assert!(!text.contains('\u{28FE}'));
     }
 
     #[test]
-    fn test_inline_mode_omits_absolute_row1_move() {
-        let mut renderer = BrailleRenderer::with_cursor_mode(super::super::CursorMode::Inline);
-        let fb = VirtualFramebuffer::new(2, 8, Rgb::new(0, 0, 0));
+    fn test_inline_mode_tracks_previous_height_across_resizes() {
+        let mut renderer = BrailleRenderer::with_cursor_mode(CursorMode::Inline);
+        let fb4 = VirtualFramebuffer::new(2, 16, Rgb::new(0, 0, 0)); // 4 rows
+        let fb2 = VirtualFramebuffer::new(2, 8, Rgb::new(0, 0, 0)); // 2 rows
+        let fb5 = VirtualFramebuffer::new(2, 20, Rgb::new(0, 0, 0)); // 5 rows
 
-        let mut first = Vec::new();
-        renderer
-            .render(&fb, &mut first)
-            .expect("First render succeeds");
-        let first_text = String::from_utf8_lossy(&first);
-        assert!(!first_text.contains("\x1b[1;1H"));
-        assert!(!first_text.contains("\x1b[2;1H"));
-        assert!(first_text.contains("\r\n"));
+        let mut out1 = Vec::new();
+        renderer.render(&fb4, &mut out1).unwrap();
+        assert!(!String::from_utf8_lossy(&out1).contains("\x1b[1;1H"));
 
-        let mut second = Vec::new();
-        renderer
-            .render(&fb, &mut second)
-            .expect("Second render succeeds");
-        let second_text = String::from_utf8_lossy(&second);
-        assert!(second_text.starts_with("\r\x1b[1A"));
-        assert!(!second_text.contains("\x1b[1;1H"));
+        let mut out2 = Vec::new();
+        renderer.render(&fb2, &mut out2).unwrap();
+        let t2 = String::from_utf8_lossy(&out2);
+        assert!(t2.starts_with("\r\x1b[3A"));
+        assert!(t2.contains("\x1b[K"));
+        assert!(t2.contains("\x1b[J"));
+
+        let mut out3 = Vec::new();
+        renderer.render(&fb5, &mut out3).unwrap();
+        let t3 = String::from_utf8_lossy(&out3);
+        assert!(t3.starts_with("\r\x1b[1A"));
+        assert!(!t3.contains("\x1b[J"));
     }
 }

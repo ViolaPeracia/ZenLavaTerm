@@ -93,6 +93,7 @@ Test-Pass "Headless: standard" @("--headless", "--frames", "20") "Headless simul
 Test-Pass "Headless: --system" @("--headless", "--frames", "20", "--system") "system=true"
 Test-Pass "Headless: --audio" @("--headless", "--frames", "20", "--audio") "audio=true"
 Test-Pass "Headless: --audio --audio-loopback" @("--headless", "--frames", "20", "--audio", "--audio-loopback") "audio=true"
+Test-Pass "Headless: --audio-loopback auto-enables audio" @("--headless", "--frames", "10", "--audio-loopback") "audio=true"
 
 # 3. Snapshots (all 3 renderers + 1-row micro geometry)
 Test-Pass "Snapshot: halfblock 40x8" @("--snapshot", "--width", "40", "--height", "8", "--renderer", "halfblock", "--theme", "lava") "\x1b\[0m"
@@ -112,18 +113,23 @@ Test-Fail "Reject: --width 5000 --height 5000" @("--width", "5000", "--height", 
 Test-Fail "Reject: --renderer bogus" @("--renderer", "bogus")
 Test-Fail "Reject: --shockwave-force NaN" @("--shockwave-force", "NaN")
 Test-Fail "Reject: --system --audio conflict" @("--system", "--audio")
+Test-Fail "Reject: --system --audio-loopback conflict" @("--system", "--audio-loopback")
+Test-Fail "Reject: nonexistent --audio-device fails fast" @("--headless", "--frames", "5", "--audio-device", "__LavaTerm_NonExistent_Device__")
 
-# 6. Theme parser regression checks
+# 6. Theme & config parser regression checks
 $brokenJson = Join-Path $env:TEMP "lavaterm_broken_$PID.json"
 $utf8HexJson = Join-Path $env:TEMP "lavaterm_utf8_$PID.json"
+$unknownKeyToml = Join-Path $env:TEMP "lavaterm_unknown_$PID.toml"
 try {
     [System.IO.File]::WriteAllText($brokenJson, '{ "bottom": "#ff0000"', [System.Text.UTF8Encoding]::new($false))
     [System.IO.File]::WriteAllText($utf8HexJson, '{ "bottom": "#ééé" }', [System.Text.UTF8Encoding]::new($false))
+    [System.IO.File]::WriteAllText($unknownKeyToml, "[render]`nglo = true`n", [System.Text.UTF8Encoding]::new($false))
 
     Test-Fail "Theme: broken JSON returns error" @("--theme", $brokenJson, "--headless", "--frames", "1")
     Test-Fail "Theme: 6-byte UTF-8 hex returns error without panic" @("--theme", $utf8HexJson, "--headless", "--frames", "1")
+    Test-Fail "Config: unknown TOML key rejected cleanly" @("--config", $unknownKeyToml, "--headless", "--frames", "1")
 } finally {
-    Remove-Item -Path $brokenJson, $utf8HexJson -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path $brokenJson, $utf8HexJson, $unknownKeyToml -Force -ErrorAction SilentlyContinue
 }
 
 $total = $script:Passed + $script:Failed
