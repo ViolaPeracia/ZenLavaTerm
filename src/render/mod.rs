@@ -46,7 +46,7 @@ impl Default for RasterizeOptions {
             threshold: 1.0,
             gradient: true,
             ambient_glow: true,
-            molten_pool: true,
+            molten_pool: false,
             aspect_ratio: 1.0,
         }
     }

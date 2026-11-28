@@ -205,7 +205,7 @@ impl Default for RenderConfig {
             fps: 30,
             gradient: true,
             glow: true,
-            molten_pool: true,
+            molten_pool: false,
         }
     }
 }

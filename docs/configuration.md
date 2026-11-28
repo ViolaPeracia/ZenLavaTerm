@@ -40,7 +40,7 @@ renderer = "halfblock"        # "halfblock" | "block" | "braille"
 fps = 30                      # 1..=240
 gradient = true               # smooth color interpolation
 glow = true                   # ambient edge aura & bottom furnace glow (auto-off on braille/stepped)
-molten_pool = true            # undulating molten lava base pool along the bottom edge
+molten_pool = false           # optional undulating lava pool along the bottom edge
 
 [palette]
 bottom = "#ff3b00"            # heat source (hot)

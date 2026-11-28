@@ -60,19 +60,19 @@ impl ReactiveChoice {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum VisualFxChoice {
+    GlowOnly,
     GlowAndPool,
-    PoolOnly,
     ClassicFlat,
 }
 
 impl VisualFxChoice {
-    const ALL: [Self; 3] = [Self::GlowAndPool, Self::PoolOnly, Self::ClassicFlat];
+    const ALL: [Self; 3] = [Self::GlowOnly, Self::GlowAndPool, Self::ClassicFlat];
 
     fn label(self) -> &'static str {
         match self {
-            Self::GlowAndPool => "Glow + Molten Pool (recommended)",
-            Self::PoolOnly => "Molten Pool Only",
-            Self::ClassicFlat => "Classic Flat (no glow/pool)",
+            Self::GlowOnly => "Soft Glow (recommended)",
+            Self::GlowAndPool => "Glow + Bottom Pool",
+            Self::ClassicFlat => "Classic Flat (no glow)",
         }
     }
 }
@@ -145,9 +145,9 @@ impl WizardState {
             .unwrap_or(3);
 
         let fx_choice = match (config.render.glow, config.render.molten_pool) {
-            (true, true) => VisualFxChoice::GlowAndPool,
-            (false, true) => VisualFxChoice::PoolOnly,
-            _ => VisualFxChoice::ClassicFlat,
+            (true, false) => VisualFxChoice::GlowOnly,
+            (true, true) | (false, true) => VisualFxChoice::GlowAndPool,
+            (false, false) => VisualFxChoice::ClassicFlat,
         };
         let fx_idx = VisualFxChoice::ALL
             .iter()
@@ -225,12 +225,12 @@ impl WizardState {
         cfg.simulation.blobs = BLOB_OPTIONS[self.blob_idx];
 
         match VisualFxChoice::ALL[self.fx_idx] {
+            VisualFxChoice::GlowOnly => {
+                cfg.render.glow = true;
+                cfg.render.molten_pool = false;
+            }
             VisualFxChoice::GlowAndPool => {
                 cfg.render.glow = true;
-                cfg.render.molten_pool = true;
-            }
-            VisualFxChoice::PoolOnly => {
-                cfg.render.glow = false;
                 cfg.render.molten_pool = true;
             }
             VisualFxChoice::ClassicFlat => {
@@ -704,10 +704,14 @@ mod tests {
     #[test]
     fn test_wizard_visual_fx_and_interaction_toggles() {
         let mut state = WizardState::from_config(&Config::default());
-        state.selected_row = 5; // Visual Effects
-        state.cycle(1); // PoolOnly
+        state.selected_row = 5; // Visual Effects (default: GlowOnly)
+        let cfg_default = state.to_config();
+        assert!(cfg_default.render.glow);
+        assert!(!cfg_default.render.molten_pool);
+
+        state.cycle(1); // GlowAndPool
         let cfg = state.to_config();
-        assert!(!cfg.render.glow);
+        assert!(cfg.render.glow);
         assert!(cfg.render.molten_pool);
 
         state.cycle(1); // ClassicFlat

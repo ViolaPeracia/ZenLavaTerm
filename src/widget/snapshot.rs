@@ -67,7 +67,7 @@ pub fn render_snapshot_options(
     gradient: bool,
 ) -> Result<String> {
     let raster_opts =
-        RasterizeOptions::for_renderer(renderer_type, threshold, gradient, true, true);
+        RasterizeOptions::for_renderer(renderer_type, threshold, gradient, true, false);
     render_snapshot_with_options(
         sim,
         palette,
