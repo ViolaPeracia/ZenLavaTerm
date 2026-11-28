@@ -95,11 +95,13 @@ Test-Pass "Headless: --audio" @("--headless", "--frames", "20", "--audio") "audi
 Test-Pass "Headless: --audio --audio-loopback" @("--headless", "--frames", "20", "--audio", "--audio-loopback") "audio=true"
 Test-Pass "Headless: --audio-loopback auto-enables audio" @("--headless", "--frames", "10", "--audio-loopback") "audio=true"
 
-# 3. Snapshots (all 3 renderers + 1-row micro geometry)
+# 3. Snapshots (all 5 renderers + 1-row micro geometry)
 Test-Pass "Snapshot: halfblock 40x8" @("--snapshot", "--width", "40", "--height", "8", "--renderer", "halfblock", "--theme", "lava") "\x1b\[0m"
 Test-Pass "Snapshot: block 40x8" @("--snapshot", "--width", "40", "--height", "8", "--renderer", "block", "--theme", "matrix") "\x1b\[38;2;"
 Test-Pass "Snapshot: braille 40x8" @("--snapshot", "--width", "40", "--height", "8", "--renderer", "braille", "--theme", "cyberpunk") "\x1b\[38;2;"
 Test-Pass "Snapshot: single-row braille 20x1" @("--snapshot", "--width", "20", "--height", "1", "--renderer", "braille") "\x1b\[38;2;" -SingleLine
+Test-Pass "Snapshot: kitty 24x8" @("--snapshot", "--width", "24", "--height", "8", "--renderer", "kitty", "--theme", "ocean") "\x1b_Ga=T,f=24"
+Test-Pass "Snapshot: sixel 24x8" @("--snapshot", "--width", "24", "--height", "8", "--renderer", "sixel", "--theme", "lava") "\x1bP0;0;0q"
 
 # 4. Audio device enumeration
 Test-Pass "Audio: --list-audio-devices" @("--list-audio-devices") "Available Audio Capture Devices"
@@ -115,6 +117,7 @@ Test-Fail "Reject: --shockwave-force NaN" @("--shockwave-force", "NaN")
 Test-Fail "Reject: --system --audio conflict" @("--system", "--audio")
 Test-Fail "Reject: --system --audio-loopback conflict" @("--system", "--audio-loopback")
 Test-Fail "Reject: nonexistent --audio-device fails fast" @("--headless", "--frames", "5", "--audio-device", "__LavaTerm_NonExistent_Device__")
+Test-Fail "Reject: --screensaver --headless conflict" @("--screensaver", "--headless", "--frames", "1")
 
 # 6. Theme & config parser regression checks
 $brokenJson = Join-Path $env:TEMP "lavaterm_broken_$PID.json"

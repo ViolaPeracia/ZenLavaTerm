@@ -1,18 +1,18 @@
 # ZenLavaTerm Current State
 
 > **Last Updated**: 2026-11-28
-> **Current Version**: `2.0.0` (see `Cargo.toml` and `CHANGELOG.md`)
+> **Current Version**: `2.1.0` (see `Cargo.toml` and `CHANGELOG.md`)
 
 ---
 
 ## 1. Release & Codebase Status
 
-- **Crate Version**: `2.0.0` (`rust-version = "1.86"`)
-- **Git Branch**: `feat/v1.1.0-visuals-and-audit`
+- **Crate Version**: `2.1.0` (`rust-version = "1.86"`)
+- **Git Branch**: `feat/v2.1.0-graphics-and-controls`
 - **Active Test Suite**:
-  - Unit tests: **158 passed**, 0 failed
-  - Integration tests: **30 passed**, 0 failed
-  - Total automated tests: **188 passed** (`cargo test`)
+  - Unit tests: **172 passed**, 0 failed
+  - Integration tests: **31 passed**, 0 failed
+  - Total automated tests: **203 passed** (`cargo test`)
 - **Code Quality Checks**:
   - `cargo fmt --check`: Clean (no formatting differences)
   - `cargo clippy --all-targets --all-features -- -D warnings`: Clean (zero warnings) on rustc 1.99.0

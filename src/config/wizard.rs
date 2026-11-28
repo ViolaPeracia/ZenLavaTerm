@@ -77,7 +77,7 @@ impl VisualFxChoice {
     }
 }
 
-const RENDERERS: [&str; 3] = ["halfblock", "block", "braille"];
+const RENDERERS: [&str; 5] = ["halfblock", "block", "braille", "kitty", "sixel"];
 const FPS_OPTIONS: [u32; 4] = [24, 30, 45, 60];
 const BLOB_OPTIONS: [usize; 5] = [10, 14, 18, 24, 32];
 const TOTAL_ROWS: usize = 9; // 7 settings + Save button + Launch-once button
@@ -204,7 +204,9 @@ impl WizardState {
     pub fn selected_description(&self) -> &'static str {
         match self.selected_row {
             0 => "Color palette for hot base, mid flow, cool top, and background.",
-            1 => "halfblock (smooth 2x vertical), block (chunky), braille (crisp 2x4 dots).",
+            1 => {
+                "halfblock, block, braille, kitty (Kitty/Ghostty/WezTerm), sixel (WT/Foot/iTerm2)."
+            }
             2 => "Ambient = calm lava; Audio = reacts to music; System = CPU/RAM/battery.",
             3 => "Refresh rate: 30 fps is balanced; 60 fps is ultra-smooth.",
             4 => "Number of metaball droplets floating and merging in the lamp.",
@@ -694,8 +696,12 @@ mod tests {
         state.cycle(1);
         assert_eq!(state.current_theme(), "ocean");
 
-        // Move to renderer -> braille
+        // Move to renderer -> wraps backward from halfblock to sixel, then kitty
         state.move_down();
+        state.cycle(-1);
+        assert_eq!(state.to_config().render.renderer, "sixel");
+        state.cycle(-1);
+        assert_eq!(state.to_config().render.renderer, "kitty");
         state.cycle(-1);
         assert_eq!(state.to_config().render.renderer, "braille");
 

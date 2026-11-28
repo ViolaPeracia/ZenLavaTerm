@@ -5,12 +5,50 @@ pub mod braille;
 pub mod color;
 pub mod framebuffer;
 pub mod halfblock;
+pub mod kitty;
+pub mod sixel;
 
 pub use block::BlockRenderer;
 pub use braille::BrailleRenderer;
 pub use color::{ColorPalette, Rgb};
 pub use framebuffer::VirtualFramebuffer;
 pub use halfblock::HalfBlockRenderer;
+pub use kitty::KittyRenderer;
+pub use sixel::SixelRenderer;
+
+/// Upper bound on virtual pixel width for high-resolution graphics renderers (`kitty`, `sixel`).
+pub const GRAPHICS_MAX_WIDTH: usize = 360;
+/// Upper bound on virtual pixel height for high-resolution graphics renderers (`kitty`, `sixel`).
+pub const GRAPHICS_MAX_HEIGHT: usize = 240;
+
+/// Computes virtual framebuffer pixel dimensions `(width, height)` for a given terminal cell grid
+/// and renderer backend.
+///
+/// High-resolution graphics renderers (`kitty`, `sixel`) supersample at `3x6` pixels per cell
+/// capped at `360x240` so CPU rasterization stays smooth at 60 FPS while terminals upscale cleanly.
+/// For `sixel`, height is aligned to a multiple of `6` (one Sixel band).
+pub fn framebuffer_dimensions(cols: u16, rows: u16, renderer_type: &str) -> (usize, usize) {
+    let c = cols as usize;
+    let r = rows as usize;
+    if c == 0 || r == 0 {
+        return (0, 0);
+    }
+    match renderer_type {
+        "block" => (c, r),
+        "braille" => (c * 2, r * 4),
+        "kitty" => (
+            (c * 3).clamp(1, GRAPHICS_MAX_WIDTH),
+            (r * 6).clamp(1, GRAPHICS_MAX_HEIGHT),
+        ),
+        "sixel" => {
+            let w = (c * 3).clamp(1, GRAPHICS_MAX_WIDTH);
+            let raw_h = (r * 6).clamp(6, GRAPHICS_MAX_HEIGHT);
+            let aligned_h = (raw_h / 6).max(1) * 6;
+            (w, aligned_h)
+        }
+        _ => (c, r * 2),
+    }
+}
 
 use crate::core::Simulation;
 use std::io::Write;
@@ -195,6 +233,25 @@ mod tests {
 
         let stepped = RasterizeOptions::for_renderer("halfblock", 1.0, false, true, true);
         assert!(!stepped.ambient_glow);
+    }
+
+    #[test]
+    fn test_framebuffer_dimensions_for_all_renderers() {
+        assert_eq!(framebuffer_dimensions(80, 24, "block"), (80, 24));
+        assert_eq!(framebuffer_dimensions(80, 24, "halfblock"), (80, 48));
+        assert_eq!(framebuffer_dimensions(80, 24, "braille"), (160, 96));
+        assert_eq!(framebuffer_dimensions(80, 24, "kitty"), (240, 144));
+        assert_eq!(framebuffer_dimensions(80, 24, "sixel"), (240, 144));
+        // Capped upper bounds on very large viewports
+        assert_eq!(
+            framebuffer_dimensions(240, 80, "kitty"),
+            (GRAPHICS_MAX_WIDTH, GRAPHICS_MAX_HEIGHT)
+        );
+        let (sw, sh) = framebuffer_dimensions(240, 80, "sixel");
+        assert_eq!(sw, GRAPHICS_MAX_WIDTH);
+        assert!(sh <= GRAPHICS_MAX_HEIGHT && sh % 6 == 0);
+        // Zero dimensions never panic
+        assert_eq!(framebuffer_dimensions(0, 24, "sixel"), (0, 0));
     }
 
     #[test]

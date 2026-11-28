@@ -7,18 +7,22 @@
 
 <img src="assets/lavaterm-banner.svg" alt="LavaTerm ambient lava visualization" width="100%">
 
-LavaTerm (`lavaterm`) is a terminal-native ambient lava lamp and metaball visualizer written in Rust. It simulates a 2D scalar potential field with thermal buoyancy and renders sub-cell Unicode graphics in 24-bit True Color.
+<p align="center">
+  <img src="assets/demo.gif" alt="LavaTerm live demo: volumetric shading, ripple waves, and Ctrl+t theme cross-fade" width="680">
+</p>
+
+LavaTerm (`lavaterm`) is a terminal-native ambient lava lamp and metaball visualizer written in Rust. It simulates a 2D scalar potential field with thermal buoyancy and renders sub-cell Unicode graphics in 24-bit True Color or native terminal pixel graphics via Kitty Graphics Protocol and DEC Sixel.
 
 ## Features
 
 - Continuous 2D metaball simulation with compact-support falloff, thermal buoyancy, convective swirl, volumetric 3D wax shading, soft ambient glow, and area-preserving aspect-ratio scaling.
-- Three terminal renderers: `halfblock` (default), `block`, and `braille` (`U+2800`..`U+28FF`).
-- 12 built-in theme presets (`lava`, `ocean`, `cyberpunk`, `synthwave`, `nord`, `forest`, `monochrome`, `matrix`, `sunset`, `dracula`, `catppuccin`, `tokyo-night`), plus `auto`, `pywal`, `wallust`, and custom JSON or TOML palettes.
+- Five terminal renderers: `halfblock` (default), `block`, `braille` (`U+2800`..`U+28FF`), `kitty` (Kitty Graphics Protocol 24-bit RGB for Kitty, Ghostty, WezTerm), and `sixel` (DEC Sixel graphics for Windows Terminal, Foot, Konsole, WezTerm, iTerm2).
+- 12 built-in theme presets (`lava`, `ocean`, `cyberpunk`, `synthwave`, `nord`, `forest`, `monochrome`, `matrix`, `sunset`, `dracula`, `catppuccin`, `tokyo-night`), plus `auto`, `pywal`, `wallust`, custom JSON/TOML palettes, and live `Ctrl+t` theme cross-fading.
 - Interactive first-run and `--config` keyboard setup wizard for saving default settings cleanly to `config.toml`.
 - System telemetry mode (`--system`) mapping CPU, RAM, and battery state to fluid dynamics.
 - FFT audio mode (`--audio`) with noise-gated Adaptive AGC and Parseval band RMS, Windows WASAPI desktop loopback (`--audio-loopback`), and optional strict capture (`--no-audio-fallback`).
-- Display modes for full-screen (with `OSC 11/111` & Synchronized Output), `--compact`, `--widget` (15 FPS), `--inline`, `--snapshot`, and `--headless`, plus a fading bordered top-left status HUD (`Ctrl+i` / `Tab`).
-- Mouse and full-keyboard interaction for shockwaves, fluid stirring, thermal pulses, and expanding surface ripple waves on every typed character and `Space`.
+- Display modes for full-screen (with `OSC 11/111` & Synchronized Output), `--screensaver` (exits on any keypress or mouse activity), `--compact`, `--widget` (15 FPS), `--inline`, `--snapshot`, and `--headless`, plus a fading bordered top-left status HUD (`Ctrl+i` / `Tab`).
+- Mouse and full-keyboard interaction for shockwaves, fluid stirring, thermal pulses, live theme/renderer/glow hotkeys, and expanding surface ripple waves on every typed character and `Space`.
 
 ## Requirements
 
@@ -66,6 +70,13 @@ lavaterm -t cyberpunk
 # Use the 2x4 Braille matrix renderer
 lavaterm -r braille
 
+# High-resolution pixel graphics (Kitty/Ghostty/WezTerm or Sixel terminals)
+lavaterm -r kitty
+lavaterm -r sixel
+
+# Fullscreen terminal screensaver (exits on any keypress or mouse activity)
+lavaterm --screensaver
+
 # Drive simulation from OS CPU, RAM, and battery telemetry
 lavaterm --system
 
@@ -92,6 +103,9 @@ lavaterm --headless --frames 30
 | `Esc`, `Ctrl+q`, `Ctrl+c` | Quit and restore terminal |
 | `Ctrl+p` | Pause or resume simulation |
 | `Ctrl+r` | Reset blobs and speed |
+| `Ctrl+t` | Cycle built-in theme with smooth cross-fade |
+| `Ctrl+o` | Cycle output renderer (`halfblock`, `block`, `braille`, `kitty`, `sixel`) |
+| `Ctrl+g` | Toggle soft ambient glow |
 | `Ctrl+i`, `Tab` | Show bordered top-left status HUD (fades out automatically) |
 | `+`, `=`, `Up`, `Right` | Increase simulation speed (+0.25x, up to 4.0x) |
 | `-`, `_`, `Down`, `Left` | Decrease simulation speed (-0.25x, down to 0.25x) |

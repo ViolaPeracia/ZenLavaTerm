@@ -17,6 +17,12 @@ pub enum Action {
     SlowDown,
     /// Reset simulation state (`Ctrl+r`).
     Reset,
+    /// Cycle to the next built-in theme preset with smooth color cross-fade (`Ctrl+t`).
+    CycleTheme,
+    /// Cycle to the next output renderer backend (`Ctrl+o`).
+    CycleRenderer,
+    /// Toggle ambient soft edge glow (`Ctrl+g`).
+    ToggleGlow,
     /// Acoustic ripple / perturbation injected into the lava.
     Ripple(f32),
     /// No actionable command.
@@ -47,7 +53,8 @@ pub fn ripple_origin_for_char(ch: char) -> (f32, f32) {
 
 /// Translates a crossterm `KeyEvent` into a domain `Action` with optional keyboard ripple.
 ///
-/// Letter commands use `Ctrl+<key>` (`Ctrl+p` pause, `Ctrl+r` reset, `Ctrl+i` HUD, `Ctrl+q`/`Ctrl+c` quit)
+/// Letter commands use `Ctrl+<key>` (`Ctrl+p` pause, `Ctrl+r` reset, `Ctrl+i` HUD,
+/// `Ctrl+t` theme, `Ctrl+o` output renderer, `Ctrl+g` glow, `Ctrl+q`/`Ctrl+c` quit)
 /// so typing any normal letter or spacebar creates ripples without accidentally pausing or quitting.
 /// `Esc` remains an instant quit shortcut.
 pub fn map_key_event_with_ripple(key: KeyEvent, enable_ripple: bool) -> Action {
@@ -64,6 +71,9 @@ pub fn map_key_event_with_ripple(key: KeyEvent, enable_ripple: bool) -> Action {
             KeyCode::Char('p') | KeyCode::Char('P') => Action::TogglePause,
             KeyCode::Char('r') | KeyCode::Char('R') => Action::Reset,
             KeyCode::Char('i') | KeyCode::Char('I') => Action::ToggleHud,
+            KeyCode::Char('t') | KeyCode::Char('T') => Action::CycleTheme,
+            KeyCode::Char('o') | KeyCode::Char('O') => Action::CycleRenderer,
+            KeyCode::Char('g') | KeyCode::Char('G') => Action::ToggleGlow,
             _ => Action::None,
         };
     }
@@ -124,7 +134,7 @@ mod tests {
 
     #[test]
     fn test_plain_letters_and_space_trigger_ripple_instead_of_commands() {
-        for ch in ['q', 'p', 'r', 'i', ' ', 'a', '7', '!'] {
+        for ch in ['q', 'p', 'r', 'i', 't', 'o', 'g', ' ', 'a', '7', '!'] {
             assert_eq!(
                 map_key_event(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE)),
                 Action::Ripple(1.0),
@@ -139,6 +149,26 @@ mod tests {
                 "Plain '{ch}' should be ignored when ripple is disabled"
             );
         }
+    }
+
+    #[test]
+    fn test_live_visual_hotkeys() {
+        assert_eq!(
+            map_key_event(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL)),
+            Action::CycleTheme
+        );
+        assert_eq!(
+            map_key_event(KeyEvent::new(KeyCode::Char('T'), KeyModifiers::CONTROL)),
+            Action::CycleTheme
+        );
+        assert_eq!(
+            map_key_event(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL)),
+            Action::CycleRenderer
+        );
+        assert_eq!(
+            map_key_event(KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL)),
+            Action::ToggleGlow
+        );
     }
 
     #[test]

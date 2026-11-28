@@ -16,7 +16,7 @@ Platform / Inputs  -->  Signals & Interactions
                        Virtual Framebuffer (RGB grid)
                               |
                               v
-                       Terminal Renderer (HalfBlock, Block, Braille)
+                       Terminal Renderer (HalfBlock, Block, Braille, Kitty, Sixel)
                               |
                               v
                        Stdout TTY Stream (Batched ANSI bytes)
@@ -58,15 +58,17 @@ The library crate root is [src/lib.rs](../src/lib.rs) and the CLI binary entry p
 `render` discretizes the scalar field into a 2D pixel buffer and encodes ANSI output:
 
 - **Virtual framebuffer & rasterizer (`framebuffer.rs`, `mod.rs`, `color.rs`)**: Holds a contiguous RGB grid and maps field potential and temperature through `RasterizeOptions` (`threshold`, `gradient`, `ambient_glow`, `molten_pool`, `aspect_ratio`). Uses physically-inspired volumetric wax shading (deep curved rim, theme-faithful glowing core, bottom bulb under-lighting, expanding ripple wave crests, and optional `molten_pool`) while automatically disabling ambient glow for 1-bit `braille` and stepped color modes to keep silhouettes sharp.
-- **Sub-cell encoders (`halfblock.rs`, `block.rs`, `braille.rs`)**:
+- **Sub-cell & pixel graphics encoders (`halfblock.rs`, `block.rs`, `braille.rs`, `kitty.rs`, `sixel.rs`)**:
   - `HalfBlockRenderer`: Packs two vertical pixels per cell using `▀` (2x vertical resolution).
   - `BlockRenderer`: Maps one pixel per character cell using `█`.
   - `BrailleRenderer`: Maps a 2x4 subpixel dot matrix per cell using `U+2800`..`U+28FF`.
-- **Cursor modes, Synchronized Output, HUD & cleanup**: Renderers support `CursorMode::{Absolute, Inline, Stream}` (where `Stream` emits LF-only rows for snapshot/piping, and `Inline` tracks `last_rendered_rows`, emits `\x1b[K` per row, and clears leftover lines with `\x1b[J` when shrinking). Interactive frames wrap rendering and the alpha-blended, rounded-border top-left HUD (`Ctrl+i` / `Tab`, supported in both fullscreen and inline via `\x1b7`/`\x1b8`) in Synchronized Output (`\x1b[?2026h…l`) with a 256 KB write buffer to eliminate HUD flicker. Fullscreen mode also disables line-wrap (`\x1b[?7l`) and syncs native terminal padding via `OSC 11/111`, restored cleanly by RAII `TerminalGuard` on exit or panic.
+  - `KittyRenderer`: Transmits 24-bit RGB Base64 chunks via the Kitty Graphics Protocol (`i=1, p=1, z=-1, q=2`) at bounded supersampled resolution (`≤ 360x240`), letting Kitty/Ghostty/WezTerm upscale cleanly behind the HUD.
+  - `SixelRenderer`: Quantizes the framebuffer into `≤ 255` 5-bit RGB registers and emits RLE-compressed DEC Sixel bands (`\x1bP0;0;0q...\x1b\\`) for Windows Terminal, Foot, Konsole, WezTerm, iTerm2, and XTerm.
+- **Cursor modes, Synchronized Output, HUD & cleanup**: Renderers support `CursorMode::{Absolute, Inline, Stream}` (where `Stream` emits LF-only rows for snapshot/piping, and `Inline` tracks `last_rendered_rows`, emits `\x1b[K` per row, and clears leftover lines with `\x1b[J` when shrinking). Interactive frames wrap rendering and the alpha-blended, rounded-border top-left HUD (`Ctrl+i` / `Tab`, supported in both fullscreen and inline via `\x1b7`/`\x1b8`) in Synchronized Output (`\x1b[?2026h…l`) with a 256 KB write buffer to eliminate HUD flicker. Fullscreen mode also disables line-wrap (`\x1b[?7l`), syncs native terminal padding via `OSC 11/111`, and deletes Kitty image ID `1` cleanly via RAII `TerminalGuard` on exit, panic, or live renderer switch.
 
 ### Input (`src/input/`)
 
-`input` translates `crossterm` keyboard and mouse events into simulation actions (`Quit` via `Esc`/`Ctrl+q`/`Ctrl+c`, `TogglePause` via `Ctrl+p`, `Reset` via `Ctrl+r`, `ToggleHud` via `Ctrl+i`/`Tab`, `SpeedUp`/`SlowDown` via `+`/`-`/arrows, localized QWERTY `Ripple` on all normal letters and `Space`, and mouse click/drag/scroll impulses). On Windows, `KeyEventKind::Release` events are filtered out so key presses do not fire twice.
+`input` translates `crossterm` keyboard and mouse events into simulation actions (`Quit` via `Esc`/`Ctrl+q`/`Ctrl+c`, `TogglePause` via `Ctrl+p`, `Reset` via `Ctrl+r`, `CycleTheme` via `Ctrl+t` with `0.45s` `ColorPalette::lerp` cross-fade, `CycleRenderer` via `Ctrl+o`, `ToggleGlow` via `Ctrl+g`, `ToggleHud` via `Ctrl+i`/`Tab`, `SpeedUp`/`SlowDown` via `+`/`-`/arrows, localized QWERTY `Ripple` on all normal letters and `Space`, `--screensaver` exit-on-activity guard, and mouse click/drag/scroll impulses). On Windows, `KeyEventKind::Release` events are filtered out so key presses do not fire twice.
 
 ### Configuration, themes, and widgets (`src/config/`, `src/theme/`, `src/widget/`)
 
@@ -82,4 +84,4 @@ The library crate root is [src/lib.rs](../src/lib.rs) and the CLI binary entry p
 
 ## Verification and benchmarks
 
-The automated test suite contains 188 tests (158 unit tests and 30 integration tests) verified via `cargo test`, alongside headless checks (`cargo run -- --headless --frames 30`) and platform smoke scripts (`scripts/smoke_test.py` on Linux and `scripts/smoke_test_windows.ps1` on Windows). Criterion micro-benchmark measurements for field evaluation, rasterization, renderers, FFT, and Seqlock ring buffer contention are recorded in [benchmark_baseline.md](benchmarks/benchmark_baseline.md).
+The automated test suite contains 203 tests (172 unit tests and 31 integration tests) verified via `cargo test`, alongside headless checks (`cargo run -- --headless --frames 30`) and platform smoke scripts (`scripts/smoke_test.py` on Linux and `scripts/smoke_test_windows.ps1` on Windows). Criterion micro-benchmark measurements for field evaluation, rasterization, renderers, FFT, and Seqlock ring buffer contention are recorded in [benchmark_baseline.md](benchmarks/benchmark_baseline.md).

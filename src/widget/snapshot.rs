@@ -2,8 +2,9 @@
 
 use crate::core::Simulation;
 use crate::render::{
-    rasterize_simulation, BlockRenderer, BrailleRenderer, ColorPalette, CursorMode,
-    HalfBlockRenderer, RasterizeOptions, Renderer, VirtualFramebuffer,
+    framebuffer_dimensions, rasterize_simulation, BlockRenderer, BrailleRenderer, ColorPalette,
+    CursorMode, HalfBlockRenderer, KittyRenderer, RasterizeOptions, Renderer, SixelRenderer,
+    VirtualFramebuffer,
 };
 use crate::{LavaError, Result};
 
@@ -31,11 +32,7 @@ pub fn render_snapshot_with_options(
     }
 
     // 2. Compute virtual framebuffer dimensions
-    let (v_width, v_height) = match renderer_type {
-        "block" => (cols as usize, rows as usize),
-        "braille" => (cols as usize * 2, rows as usize * 4),
-        _ => (cols as usize, rows as usize * 2),
-    };
+    let (v_width, v_height) = framebuffer_dimensions(cols, rows, renderer_type);
 
     let mut fb = VirtualFramebuffer::new(v_width, v_height, palette.background);
     let effective_opts =
@@ -47,6 +44,12 @@ pub fn render_snapshot_with_options(
     let mut renderer: Box<dyn Renderer> = match renderer_type {
         "block" => Box::new(BlockRenderer::with_cursor_mode(CursorMode::Stream)),
         "braille" => Box::new(BrailleRenderer::with_cursor_mode(CursorMode::Stream)),
+        "kitty" => Box::new(KittyRenderer::with_cursor_mode(
+            CursorMode::Stream,
+            cols,
+            rows,
+        )),
+        "sixel" => Box::new(SixelRenderer::with_cursor_mode(CursorMode::Stream)),
         _ => Box::new(HalfBlockRenderer::with_cursor_mode(CursorMode::Stream)),
     };
     renderer.render(&fb, &mut out)?;
@@ -215,5 +218,21 @@ mod tests {
             out_on, out_off,
             "Snapshot output must reflect configured glow and molten_pool options"
         );
+    }
+
+    #[test]
+    fn test_snapshot_kitty_and_sixel_renderers() {
+        let palette = ColorPalette::default();
+        let mut sim = create_test_sim();
+
+        let kitty = render_snapshot(&mut sim, &palette, 20, 10, "kitty", 1.0, 3)
+            .expect("kitty snapshot succeeds");
+        assert!(kitty.starts_with("\x1b_Ga=T,f=24,t=d,i=1,p=1,s=60,v=60,c=20,r=10,z=-1,q=2,"));
+        assert!(kitty.ends_with("\x1b\\\n"));
+
+        let sixel = render_snapshot(&mut sim, &palette, 20, 10, "sixel", 1.0, 3)
+            .expect("sixel snapshot succeeds");
+        assert!(sixel.starts_with("\x1bP0;0;0q\"1;1;60;60"));
+        assert!(sixel.ends_with("\x1b\\\n"));
     }
 }

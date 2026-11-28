@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-28 — Kitty & Sixel High-Res Renderers, Live Controls & Screensaver
+
+### Added
+- **Kitty Graphics Protocol renderer (`-r kitty`)**: Zero-dependency 24-bit RGB APC renderer (`src/render/kitty.rs`) with built-in Base64 chunking (`4096` B), in-place image replacement (`i=1, p=1`), `z=-1` background placement so the top-left fading HUD renders cleanly on top, and automatic image cleanup via `TerminalGuard` and renderer switches.
+- **DEC Sixel renderer (`-r sixel`)**: Zero-dependency DCS Sixel renderer (`src/render/sixel.rs`) using fast 5-bit RGB popularity quantization (`≤ 255` color registers) and Sixel RLE compression for Windows Terminal, Foot, Konsole, WezTerm, iTerm2, and XTerm.
+- **Shared bounded graphics dimensions**: Consolidated `framebuffer_dimensions()` in `src/render/mod.rs` supersampling `kitty` and `sixel` at `3x6` pixels per cell (capped at `360x240`, 6-row aligned for Sixel) so CPU rasterization stays responsive while terminals upscale smoothly.
+- **Live runtime visual hotkeys & smooth theme cross-fade**:
+  - `Ctrl+t`: Cycles through all 12 built-in theme presets with a `0.45s` ease-out cubic `ColorPalette::lerp` cross-fade and synchronized fullscreen `OSC 11` background updates.
+  - `Ctrl+o`: Cycles output renderers live (`halfblock` → `block` → `braille` → `kitty` → `sixel`) while cleaning up Kitty image state and preserving `braille` 1-bit glow isolation.
+  - `Ctrl+g`: Toggles soft ambient glow live during a session.
+- **Screensaver mode (`--screensaver`)**: Fullscreen ambient mode with a `350ms` startup grace window that exits cleanly on any keypress, mouse click/scroll, or mouse movement (`≥ 3` cells) — designed for `tmux lock-command` and idle terminal hooks.
+- **Animated README demo (`assets/demo.gif`)**: Added a live animated demonstration of volumetric lava shading, expanding ripple waves, and `Ctrl+t` theme cross-fading to `README.md`.
+- **Renderer benchmarks**: Added `kitty_240x144` and `sixel_240x144` Criterion benchmarks in `benches/field_and_render.rs`.
+
+### Changed
+- **Setup wizard & snapshot support**: Extended `src/config/schema.rs`, `src/config/wizard.rs`, and `src/widget/snapshot.rs` to validate, select, and snapshot `kitty` and `sixel` renderers alongside `halfblock`, `block`, and `braille`.
+- **Proportional HUD background sampling**: Updated `sample_under_cell` in `src/main.rs` to sample proportionally across arbitrary framebuffer scales so HUD alpha blending stays accurate on supersampled `kitty` and `sixel` viewports.
+- **Community doc cleanup**: Removed unused template `CODE_OF_CONDUCT.md` and stale `SECURITY.md`.
+
 ## [2.0.0] - 2026-11-28 — Volumetric Visual Overhaul, Interactive Setup, Real-World Audio & Audit Hardening
 
 ### Breaking Changes
