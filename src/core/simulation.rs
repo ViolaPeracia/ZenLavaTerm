@@ -127,11 +127,11 @@ impl Simulation {
                 ),
                 _ => (0.76 + 0.14 * prng.next_f32_signed().abs(), 0.14),
             };
-            let radius = 0.085 + 0.045 * (prng.next_f32_signed().abs());
+            let radius = 0.062 + 0.036 * (prng.next_f32_signed().abs());
 
             let mut blob = Blob::new(x, y, radius, temp.clamp(0.05, 0.95));
-            blob.vx = prng.next_f32_signed() * 0.14;
-            blob.vy = prng.next_f32_signed() * 0.08;
+            blob.vx = prng.next_f32_signed() * 0.16;
+            blob.vy = prng.next_f32_signed() * 0.10;
             blobs.push(blob);
         }
         let base_radii = blobs.iter().map(|b| b.radius).collect();
@@ -291,7 +291,7 @@ impl Simulation {
                     0.85 + 0.10 * self.prng.next_f32_signed()
                 };
                 let temp = if is_bottom { 0.90 } else { 0.10 };
-                let radius = 0.08 + 0.04 * self.prng.next_f32_signed().abs();
+                let radius = 0.062 + 0.036 * self.prng.next_f32_signed().abs();
                 let mut blob = Blob::new(x, y, radius, temp);
                 blob.vx = self.prng.next_f32_signed() * 0.05;
                 blob.vy = self.prng.next_f32_signed() * 0.05;
@@ -374,7 +374,8 @@ impl Simulation {
                 let swirl_y =
                     0.10 * (bx * std::f32::consts::TAU - flow_time * 0.45 + phase * 0.2).cos();
 
-                // Soft tangential deflection when blobs pass close so they orbit instead of stacking
+                // Soft separation + tangential swirl when blobs pass close so they weave and
+                // merge briefly instead of clumping together permanently.
                 let mut deflect_x = 0.0f32;
                 let mut deflect_y = 0.0f32;
                 for (j, other) in self.blobs.iter().enumerate() {
@@ -384,12 +385,12 @@ impl Simulation {
                     let dx = bx - other.x;
                     let dy = by - other.y;
                     let d_sq = dx * dx + dy * dy;
-                    if d_sq > 1e-5 && d_sq < 0.028 {
+                    if d_sq > 1e-5 && d_sq < 0.045 {
                         let inv_d = 1.0 / d_sq.sqrt();
-                        let weight = (1.0 - d_sq / 0.028) * 0.16;
-                        // Blend gentle separation with slight perpendicular swirl
-                        deflect_x += (dx * inv_d * 0.7 - dy * inv_d * 0.45) * weight;
-                        deflect_y += (dy * inv_d * 0.5 + dx * inv_d * 0.45) * weight;
+                        let weight = (1.0 - d_sq / 0.045) * 0.36;
+                        // Blend clear separation with slight perpendicular swirl
+                        deflect_x += (dx * inv_d * 0.85 - dy * inv_d * 0.40) * weight;
+                        deflect_y += (dy * inv_d * 0.70 + dx * inv_d * 0.40) * weight;
                     }
                 }
 

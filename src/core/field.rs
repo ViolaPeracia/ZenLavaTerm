@@ -31,11 +31,11 @@ pub fn evaluate_with_temperature(blobs: &[Blob], px: f32, py: f32) -> (f32, f32)
 }
 
 /// Evaluates field intensity and weighted temperature with area-preserving isotropic
-/// aspect-ratio correction.
+/// aspect-ratio correction and compact-support metaball falloff.
 ///
-/// `aspect_ratio` is `physical_width / physical_height` (e.g. `~1.8` on a widescreen terminal).
-/// Scaling by `(sqrt(aspect), 1 / sqrt(aspect))` keeps metaballs visually circular while
-/// preserving constant screen coverage across square, widescreen, and tall viewports.
+/// Using compact support (`d < 2.2 * r`, normalized so `d == r -> 1.0`) eliminates infinite
+/// far-field summation tails so 10–32 blobs stay distinct and only form organic gooey necks
+/// when they genuinely approach each other.
 #[inline]
 pub fn evaluate_with_temperature_aspect(
     blobs: &[Blob],
@@ -43,6 +43,11 @@ pub fn evaluate_with_temperature_aspect(
     py: f32,
     aspect_ratio: f32,
 ) -> (f32, f32) {
+    // Cutoff at 2.2 * r -> cut_factor = 4.84, tail = 1 / 4.84, norm = 1 / (1 - tail)
+    const CUT_SQ_MULT: f32 = 4.84;
+    const TAIL: f32 = 1.0 / CUT_SQ_MULT;
+    const NORM: f32 = 1.0 / (1.0 - TAIL);
+
     let aspect = aspect_ratio.clamp(0.25, 4.0);
     let scale_x = aspect.sqrt();
     let scale_y = 1.0 / scale_x;
@@ -55,10 +60,11 @@ pub fn evaluate_with_temperature_aspect(
         let dy = (py - blob.y) * scale_y;
         let d_sq = dx * dx + dy * dy;
         let r_sq = blob.radius * blob.radius;
-        let contribution = r_sq / (d_sq + EPSILON);
-
-        total_field += contribution;
-        weighted_temp += contribution * blob.temperature;
+        if d_sq < r_sq * CUT_SQ_MULT {
+            let contribution = ((r_sq / (d_sq + EPSILON) - TAIL) * NORM).max(0.0);
+            total_field += contribution;
+            weighted_temp += contribution * blob.temperature;
+        }
     }
 
     let avg_temp = if total_field > 0.0 {
